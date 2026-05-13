@@ -52,7 +52,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center">
       <div className="w-full max-w-xs">
         <h1 className="mb-6 text-center text-xl font-medium text-foreground">
-          trustclaw
+          Starter Agents
         </h1>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
