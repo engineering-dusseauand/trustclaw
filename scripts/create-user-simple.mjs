@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../src/generated/prisma/client.ts";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { scrypt, randomBytes } from "crypto";
 import { promisify } from "util";
 
@@ -11,7 +12,13 @@ async function hashPassword(password) {
 }
 
 async function main() {
-  const prisma = new PrismaClient();
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL not set");
+  }
+  
+  const adapter = new PrismaPg({ connectionString: databaseUrl });
+  const prisma = new PrismaClient({ adapter });
   
   try {
     const hashedPassword = await hashPassword("Password,1906!");
@@ -40,7 +47,7 @@ async function main() {
       },
     });
 
-    console.log("✅ User created successfully!");
+    console.log("User created successfully!");
     console.log("   Email: Mark@starterstack.ai");
     console.log("   Username: mark");
   } catch (error) {
