@@ -2,63 +2,45 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { TrustClawBrand } from "~/app/_components/trustclaw-brand";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { authClient } from "~/clients/auth/react";
 import { showErrorToast } from "~/components/core/toast-notifications";
 
-interface LoginPageProps {
-  firstTime?: boolean;
-}
-
-export function LoginPage({ firstTime = false }: LoginPageProps) {
+export function LoginPage() {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [isRegister, setIsRegister] = useState(false);
 
-  // Login form state
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
 
-  // Register form state
-  const [regEmail, setRegEmail] = useState("");
-  const [regUsername, setRegUsername] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [regName, setRegName] = useState("");
-
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPending(true);
     try {
-      const result = await authClient.signIn.username({
-        username: loginUsername,
-        password: loginPassword,
-      });
-      if (result.error) {
-        showErrorToast(result.error.message ?? "Failed to sign in");
-        return;
-      }
-      router.push("/dashboard");
-    } finally {
-      setPending(false);
-    }
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPending(true);
-    try {
-      const result = await authClient.signUp.email({
-        email: regEmail,
-        password: regPassword,
-        username: regUsername,
-        name: regName,
-      });
-      if (result.error) {
-        showErrorToast(result.error.message ?? "Failed to create account");
-        return;
+      if (isRegister) {
+        const result = await authClient.signUp.email({
+          email,
+          password,
+          username,
+          name,
+        });
+        if (result.error) {
+          showErrorToast(result.error.message ?? "Failed to create account");
+          return;
+        }
+      } else {
+        const result = await authClient.signIn.username({
+          username,
+          password,
+        });
+        if (result.error) {
+          showErrorToast(result.error.message ?? "Failed to sign in");
+          return;
+        }
       }
       router.push("/dashboard");
     } finally {
@@ -67,105 +49,67 @@ export function LoginPage({ firstTime = false }: LoginPageProps) {
   };
 
   return (
-    <div className="bg-background flex min-h-screen flex-col items-center justify-center">
-      <div className="mx-auto w-full max-w-sm px-4">
-        <div className="mb-8 flex justify-center">
-          <TrustClawBrand size="lg" logoLink="/" />
-        </div>
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="w-full max-w-xs">
+        <h1 className="mb-6 text-center text-xl font-medium text-foreground">
+          trustclaw
+        </h1>
 
-        <div className="bg-card rounded-lg border p-6 shadow-sm">
-          <Tabs defaultValue={firstTime ? "register" : "login"}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-            </TabsList>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          {isRegister && (
+            <>
+              <Input
+                type="text"
+                placeholder="Name"
+                autoComplete="name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Input
+                type="email"
+                placeholder="Email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </>
+          )}
+          <Input
+            type="text"
+            placeholder="Username"
+            autoComplete="username"
+            required
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <Input
+            type="password"
+            placeholder="Password"
+            autoComplete={isRegister ? "new-password" : "current-password"}
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <Button type="submit" disabled={pending} className="mt-1">
+            {pending
+              ? isRegister
+                ? "Creating..."
+                : "Signing in..."
+              : isRegister
+                ? "Create account"
+                : "Sign in"}
+          </Button>
+        </form>
 
-            <TabsContent value="login" className="mt-4">
-              <form className="space-y-4" onSubmit={handleLogin}>
-                <div className="space-y-2">
-                  <Label htmlFor="login-username">Username</Label>
-                  <Input
-                    id="login-username"
-                    type="text"
-                    autoComplete="username"
-                    required
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Password</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={pending}>
-                  {pending ? "Signing in..." : "Sign in"}
-                </Button>
-              </form>
-            </TabsContent>
-
-            <TabsContent value="register" className="mt-4">
-              <form className="space-y-4" onSubmit={handleRegister}>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-name">Name</Label>
-                  <Input
-                    id="reg-name"
-                    type="text"
-                    autoComplete="name"
-                    required
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-email">Email</Label>
-                  <Input
-                    id="reg-email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-username">Username</Label>
-                  <Input
-                    id="reg-username"
-                    type="text"
-                    autoComplete="username"
-                    required
-                    minLength={3}
-                    maxLength={30}
-                    value={regUsername}
-                    onChange={(e) => setRegUsername(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-password">Password</Label>
-                  <Input
-                    id="reg-password"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    minLength={8}
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={pending}>
-                  {pending ? "Creating account..." : "Create account"}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsRegister(!isRegister)}
+          className="mt-4 w-full text-center text-sm text-muted-foreground hover:text-foreground"
+        >
+          {isRegister ? "Already have an account? Sign in" : "Need an account? Register"}
+        </button>
       </div>
     </div>
   );

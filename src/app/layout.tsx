@@ -26,7 +26,7 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${primary.variable} ${code.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${primary.variable} ${code.variable} dark`} suppressHydrationWarning>
       <body className="bg-background min-h-screen font-sans antialiased">
         <ThemeProvider>
           <TRPCReactProvider>
