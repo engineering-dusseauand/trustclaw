@@ -40,26 +40,22 @@ const redisRateLimitStorage = isRedisConfigured()
     }
   : {};
 
-function isTrustedOrigin(origin: string | undefined): boolean {
-  if (!origin) return false;
-
-  const trusted = [
-    env.NEXT_PUBLIC_APP_URL,
-    process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : null,
-    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
-  ].filter(Boolean) as string[];
-
-  if (trusted.includes(origin)) return true;
-  if (origin.endsWith(".vusercontent.net")) return true;
-  return false;
-}
+const trustedOrigins = [
+  env.NEXT_PUBLIC_APP_URL,
+  process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : null,
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  // v0 sandbox preview URL
+  process.env.SANDBOX_URL ? process.env.SANDBOX_URL : null,
+  // Allow all origins in development for easier testing
+  ...(process.env.NODE_ENV === "development" ? ["*"] : []),
+].filter(Boolean) as string[];
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.NEXT_PUBLIC_APP_URL,
-  trustedOrigins: isTrustedOrigin,
+  trustedOrigins,
   database: prismaAdapter(db, { provider: "postgresql" }),
   emailAndPassword: {
     enabled: true,
