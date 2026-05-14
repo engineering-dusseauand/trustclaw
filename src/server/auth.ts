@@ -46,10 +46,8 @@ const trustedOrigins = [
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
     : null,
   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
-  // v0 sandbox preview URL
-  process.env.SANDBOX_URL ? process.env.SANDBOX_URL : null,
-  // Allow all origins in development for easier testing
-  ...(process.env.NODE_ENV === "development" ? ["*"] : []),
+  // v0 sandbox preview URLs (wildcard pattern)
+  "https://*.vusercontent.net",
 ].filter(Boolean) as string[];
 
 export const auth = betterAuth({
