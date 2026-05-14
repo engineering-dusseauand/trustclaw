@@ -49,7 +49,7 @@ export const auth = betterAuth({
       : []),
     ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
     // v0 preview URLs
-    /^https:\/\/vm-[a-z0-9]+\.vusercontent\.net$/,
+    "https://*.vusercontent.net",
   ],
   database: prismaAdapter(db, { provider: "postgresql" }),
   emailAndPassword: {
