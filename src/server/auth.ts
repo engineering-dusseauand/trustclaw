@@ -43,6 +43,8 @@ export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.NEXT_PUBLIC_APP_URL,
   trustedOrigins: (origin) => {
+    if (!origin) return false;
+    
     const trusted = [
       env.NEXT_PUBLIC_APP_URL,
       process.env.VERCEL_PROJECT_PRODUCTION_URL
