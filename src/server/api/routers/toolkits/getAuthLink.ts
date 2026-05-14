@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { headers } from "next/headers";
 import { protectedProcedure } from "~/server/api/trpc";
 import { createComposioClient } from "~/server/clients/composio";
 import { env } from "~/env";
@@ -11,9 +12,14 @@ export const getAuthLink = protectedProcedure
     const composio = createComposioClient();
     const session = await composio.create(userId, {});
 
+    // Get the origin from the request headers for the callback URL
+    const headersList = await headers();
+    const origin = headersList.get("origin") || headersList.get("referer")?.split("/").slice(0, 3).join("/") || env.NEXT_PUBLIC_APP_URL || "";
+    const callbackUrl = `${origin}/dashboard/toolkits`;
+
     try {
       const connectionRequest = await session.authorize(input.toolkit, {
-        callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/toolkits`,
+        callbackUrl,
       });
       const redirectUrl = connectionRequest.redirectUrl;
 
