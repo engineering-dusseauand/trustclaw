@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "~/server/clients/db";
-import type { Prisma } from "~/generated/prisma/client";
+import type { Prisma } from "../../../../../../generated/prisma/client.ts";
 import type {
   ReconstructedMessage,
   JsonValue,
