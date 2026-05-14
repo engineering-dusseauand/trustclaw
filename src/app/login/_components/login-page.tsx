@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "~/lib/supabase/client";
 
 export function LoginPage() {
   const router = useRouter();
