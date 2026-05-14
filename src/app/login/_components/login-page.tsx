@@ -14,48 +14,25 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPending(true);
     setError(null);
-    setMessage(null);
 
     try {
       const supabase = createClient();
-      
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo:
-              process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-              `${window.location.origin}/auth/callback`,
-          },
-        });
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-        if (error) {
-          setError(error.message);
-          return;
-        }
-
-        setMessage("Check your email for a confirmation link!");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) {
-          setError(error.message);
-          return;
-        }
-
-        router.push("/dashboard");
+      if (error) {
+        setError(error.message);
+        return;
       }
+
+      router.push("/dashboard");
     } finally {
       setPending(false);
     }
@@ -96,31 +73,10 @@ export function LoginPage() {
             </button>
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
-          {message && <p className="text-sm text-green-500">{message}</p>}
           <Button type="submit" disabled={pending} className="mt-1">
-            {pending
-              ? isSignUp
-                ? "Creating account..."
-                : "Signing in..."
-              : isSignUp
-                ? "Create account"
-                : "Sign in"}
+            {pending ? "Signing in..." : "Sign in"}
           </Button>
         </form>
-
-        <button
-          type="button"
-          onClick={() => {
-            setIsSignUp(!isSignUp);
-            setError(null);
-            setMessage(null);
-          }}
-          className="mt-4 w-full text-center text-sm text-muted-foreground hover:text-foreground"
-        >
-          {isSignUp
-            ? "Already have an account? Sign in"
-            : "Need an account? Sign up"}
-        </button>
       </div>
     </div>
   );
