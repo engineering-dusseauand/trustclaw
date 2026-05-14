@@ -1,3 +1,4 @@
+// Supabase session middleware - v2
 import { updateSession } from "~/lib/supabase/middleware";
 import { type NextRequest } from "next/server";
 
