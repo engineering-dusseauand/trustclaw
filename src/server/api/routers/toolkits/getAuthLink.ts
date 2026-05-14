@@ -7,7 +7,7 @@ import { getAuthLinkInput } from "./getAuthLink.schema";
 export const getAuthLink = protectedProcedure
   .input(getAuthLinkInput)
   .mutation(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
     const composio = createComposioClient();
     const session = await composio.create(userId, {});
 

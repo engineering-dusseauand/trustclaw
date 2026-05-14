@@ -21,7 +21,7 @@ const ONBOARDING_TOOLKITS = [
 
 export const getIntegrationAuthLinks = protectedProcedure.query(
   async ({ ctx }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
     const composio = createComposioClient();
     const session = await composio.create(userId, {});
     const toolkitsInfo = await session.toolkits({

@@ -3,7 +3,7 @@ import { db } from "~/server/clients/db";
 import { isTelegramConfigured } from "~/server/clients/telegram";
 
 export const getStatus = protectedProcedure.query(async ({ ctx }) => {
-  const userId = ctx.session.user.id;
+  const userId = ctx.user.id;
 
   const instance = await db.composioClawInstance.findUnique({
     where: { userId },
