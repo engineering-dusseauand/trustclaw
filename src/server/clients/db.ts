@@ -1,4 +1,4 @@
-// Prisma database client
+// Prisma database client - v2
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { env } from "~/env";
