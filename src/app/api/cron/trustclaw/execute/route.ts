@@ -1,5 +1,5 @@
 import { after, NextResponse } from "next/server";
-import { Prisma } from "../../../../../generated/prisma/client.ts";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { env } from "~/env";
 import { db } from "~/server/clients/db";
