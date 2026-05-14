@@ -1,4 +1,3 @@
-// Better Auth configuration
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
@@ -40,25 +39,26 @@ const redisRateLimitStorage = isRedisConfigured()
     }
   : {};
 
+function isTrustedOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+
+  const trusted = [
+    env.NEXT_PUBLIC_APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : null,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  ].filter(Boolean) as string[];
+
+  if (trusted.includes(origin)) return true;
+  if (origin.endsWith(".vusercontent.net")) return true;
+  return false;
+}
+
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.NEXT_PUBLIC_APP_URL,
-  trustedOrigins: (origin) => {
-    if (!origin) return false;
-    
-    const trusted = [
-      env.NEXT_PUBLIC_APP_URL,
-      process.env.VERCEL_PROJECT_PRODUCTION_URL
-        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-        : null,
-      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
-    ].filter(Boolean) as string[];
-
-    if (trusted.includes(origin)) return true;
-    // v0 preview URLs
-    if (origin.endsWith(".vusercontent.net")) return true;
-    return false;
-  },
+  trustedOrigins: isTrustedOrigin,
   database: prismaAdapter(db, { provider: "postgresql" }),
   emailAndPassword: {
     enabled: true,
