@@ -7,7 +7,7 @@ import { computeNextRunAt } from "./agent/tools/cron-utils";
 export const toggleCronJob = protectedProcedure
   .input(toggleCronJobInput)
   .mutation(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
 
     return db.$transaction(async (tx) => {
       const instance = await tx.composioClawInstance.findUnique({

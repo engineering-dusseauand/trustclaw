@@ -8,10 +8,10 @@ export const env = createEnv({
       .default("development"),
 
     // Better Auth
-    BETTER_AUTH_SECRET: z.string(),
+    BETTER_AUTH_SECRET: z.string().optional(),
 
     // Composio API (global key)
-    COMPOSIO_API_KEY: z.string(),
+    COMPOSIO_API_KEY: z.string().optional(),
 
     // Telegram bot (optional - Telegram features disabled when missing)
     TELEGRAM_BOT_TOKEN: z.string().optional(),
@@ -27,7 +27,7 @@ export const env = createEnv({
     // Cron auth. Required in production so unauthenticated callers can't hit
     // /api/cron/* endpoints. Vercel auto-injects this when crons are configured
     // in vercel.json; the trustclaw deploy CLI also generates one on first deploy.
-    CRON_SECRET: z.string(),
+    CRON_SECRET: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url(),

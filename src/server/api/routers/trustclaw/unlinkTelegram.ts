@@ -3,7 +3,7 @@ import { protectedProcedure } from "~/server/api/trpc";
 import { db } from "~/server/clients/db";
 
 export const unlinkTelegram = protectedProcedure.mutation(async ({ ctx }) => {
-  const userId = ctx.session.user.id;
+  const userId = ctx.user.id;
 
   return db.$transaction(async (tx) => {
     const instance = await tx.composioClawInstance.findUnique({

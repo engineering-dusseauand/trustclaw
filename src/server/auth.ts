@@ -1,3 +1,4 @@
+// Better Auth configuration - v2
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
@@ -39,16 +40,20 @@ const redisRateLimitStorage = isRedisConfigured()
     }
   : {};
 
+const trustedOrigins = [
+  env.NEXT_PUBLIC_APP_URL,
+  process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : null,
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  // v0 sandbox preview URLs (wildcard pattern)
+  "https://*.vusercontent.net",
+].filter(Boolean) as string[];
+
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.NEXT_PUBLIC_APP_URL,
-  trustedOrigins: [
-    env.NEXT_PUBLIC_APP_URL,
-    ...(process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? [`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`]
-      : []),
-    ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
-  ],
+  trustedOrigins,
   database: prismaAdapter(db, { provider: "postgresql" }),
   emailAndPassword: {
     enabled: true,

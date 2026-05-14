@@ -6,7 +6,7 @@ import { getMemoriesInput, memoryRow } from "./getMemories.schema";
 export const getMemories = protectedProcedure
   .input(getMemoriesInput)
   .query(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
 
     const instance = await db.composioClawInstance.findUnique({
       where: { userId },

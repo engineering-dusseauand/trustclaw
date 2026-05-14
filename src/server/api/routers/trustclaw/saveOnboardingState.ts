@@ -5,7 +5,7 @@ import { saveOnboardingStateInput } from "./saveOnboardingState.schema";
 export const saveOnboardingState = protectedProcedure
   .input(saveOnboardingStateInput)
   .mutation(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
 
     await db.onboardingState.upsert({
       where: { userId },

@@ -5,7 +5,7 @@ import { getHistoryInput } from "./getHistory.schema";
 export const getHistory = protectedProcedure
   .input(getHistoryInput)
   .query(async ({ input, ctx }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
 
     const instance = await db.composioClawInstance.findUnique({
       where: { userId },

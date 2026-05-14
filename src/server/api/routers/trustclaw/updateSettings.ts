@@ -6,7 +6,7 @@ import { updateSettingsInput } from "./updateSettings.schema";
 export const updateSettings = protectedProcedure
   .input(updateSettingsInput)
   .mutation(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
 
     const instance = await db.composioClawInstance.findUnique({
       where: { userId },

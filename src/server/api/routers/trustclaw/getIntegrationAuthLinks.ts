@@ -1,5 +1,5 @@
 import { protectedProcedure } from "~/server/api/trpc";
-import { createComposioClient } from "~/server/clients/composio";
+import { createComposioClient, isComposioConfigured } from "~/server/clients/composio";
 
 const ONBOARDING_TOOLKITS = [
   {
@@ -21,7 +21,22 @@ const ONBOARDING_TOOLKITS = [
 
 export const getIntegrationAuthLinks = protectedProcedure.query(
   async ({ ctx }) => {
-    const userId = ctx.session.user.id;
+    // Return empty integrations if Composio is not configured
+    if (!isComposioConfigured()) {
+      return {
+        integrations: ONBOARDING_TOOLKITS.map((toolkit) => ({
+          toolkit: toolkit.slug,
+          name: toolkit.name,
+          logo: toolkit.logo,
+          connected: false,
+          redirectUrl: null,
+          disabled: true,
+          disabledReason: "COMPOSIO_API_KEY not configured",
+        })),
+      };
+    }
+
+    const userId = ctx.user.id;
     const composio = createComposioClient();
     const session = await composio.create(userId, {});
     const toolkitsInfo = await session.toolkits({

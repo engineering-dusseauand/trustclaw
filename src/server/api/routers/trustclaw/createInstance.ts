@@ -128,7 +128,7 @@ const INSTANCE_SELECT = {
 export const createInstance = protectedProcedure
   .input(createInstanceInput)
   .mutation(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
 
     const existing = await db.composioClawInstance.findUnique({
       where: { userId },

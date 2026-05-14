@@ -2,64 +2,36 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { TrustClawBrand } from "~/app/_components/trustclaw-brand";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { authClient } from "~/clients/auth/react";
-import { showErrorToast } from "~/components/core/toast-notifications";
+import { createClient } from "~/lib/supabase/client";
 
-interface LoginPageProps {
-  firstTime?: boolean;
-}
-
-export function LoginPage({ firstTime = false }: LoginPageProps) {
+export function LoginPage() {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Login form state
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-
-  // Register form state
-  const [regEmail, setRegEmail] = useState("");
-  const [regUsername, setRegUsername] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [regName, setRegName] = useState("");
-
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPending(true);
-    try {
-      const result = await authClient.signIn.username({
-        username: loginUsername,
-        password: loginPassword,
-      });
-      if (result.error) {
-        showErrorToast(result.error.message ?? "Failed to sign in");
-        return;
-      }
-      router.push("/dashboard");
-    } finally {
-      setPending(false);
-    }
-  };
+    setError(null);
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPending(true);
     try {
-      const result = await authClient.signUp.email({
-        email: regEmail,
-        password: regPassword,
-        username: regUsername,
-        name: regName,
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      if (result.error) {
-        showErrorToast(result.error.message ?? "Failed to create account");
+
+      if (error) {
+        setError(error.message);
         return;
       }
+
       router.push("/dashboard");
     } finally {
       setPending(false);
@@ -67,105 +39,44 @@ export function LoginPage({ firstTime = false }: LoginPageProps) {
   };
 
   return (
-    <div className="bg-background flex min-h-screen flex-col items-center justify-center">
-      <div className="mx-auto w-full max-w-sm px-4">
-        <div className="mb-8 flex justify-center">
-          <TrustClawBrand size="lg" logoLink="/" />
-        </div>
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="w-full max-w-xs">
+        <h1 className="mb-6 text-center text-xl font-medium text-foreground">
+          Starter Agents
+        </h1>
 
-        <div className="bg-card rounded-lg border p-6 shadow-sm">
-          <Tabs defaultValue={firstTime ? "register" : "login"}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="login" className="mt-4">
-              <form className="space-y-4" onSubmit={handleLogin}>
-                <div className="space-y-2">
-                  <Label htmlFor="login-username">Username</Label>
-                  <Input
-                    id="login-username"
-                    type="text"
-                    autoComplete="username"
-                    required
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Password</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={pending}>
-                  {pending ? "Signing in..." : "Sign in"}
-                </Button>
-              </form>
-            </TabsContent>
-
-            <TabsContent value="register" className="mt-4">
-              <form className="space-y-4" onSubmit={handleRegister}>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-name">Name</Label>
-                  <Input
-                    id="reg-name"
-                    type="text"
-                    autoComplete="name"
-                    required
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-email">Email</Label>
-                  <Input
-                    id="reg-email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-username">Username</Label>
-                  <Input
-                    id="reg-username"
-                    type="text"
-                    autoComplete="username"
-                    required
-                    minLength={3}
-                    maxLength={30}
-                    value={regUsername}
-                    onChange={(e) => setRegUsername(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-password">Password</Label>
-                  <Input
-                    id="reg-password"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    minLength={8}
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={pending}>
-                  {pending ? "Creating account..." : "Create account"}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-        </div>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <Input
+            type="email"
+            placeholder="Email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <div className="relative">
+            <Input
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <Button type="submit" disabled={pending} className="mt-1">
+            {pending ? "Signing in..." : "Sign in"}
+          </Button>
+        </form>
       </div>
     </div>
   );

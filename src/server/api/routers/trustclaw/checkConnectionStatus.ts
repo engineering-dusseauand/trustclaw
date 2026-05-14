@@ -5,7 +5,7 @@ import { checkConnectionStatusInput } from "./checkConnectionStatus.schema";
 export const checkConnectionStatus = protectedProcedure
   .input(checkConnectionStatusInput)
   .query(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
     const composio = createComposioClient();
     const session = await composio.create(userId, {});
 

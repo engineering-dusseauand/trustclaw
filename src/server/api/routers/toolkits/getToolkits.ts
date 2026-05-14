@@ -5,7 +5,7 @@ import { getToolkitsInput } from "./getToolkits.schema";
 export const getToolkits = protectedProcedure
   .input(getToolkitsInput)
   .query(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+    const userId = ctx.user.id;
     const composio = createComposioClient();
     const session = await composio.create(userId, {});
 
