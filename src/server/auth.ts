@@ -42,15 +42,20 @@ const redisRateLimitStorage = isRedisConfigured()
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.NEXT_PUBLIC_APP_URL,
-  trustedOrigins: [
-    env.NEXT_PUBLIC_APP_URL,
-    ...(process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? [`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`]
-      : []),
-    ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
+  trustedOrigins: (origin) => {
+    const trusted = [
+      env.NEXT_PUBLIC_APP_URL,
+      process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : null,
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+    ].filter(Boolean) as string[];
+
+    if (trusted.includes(origin)) return true;
     // v0 preview URLs
-    "https://*.vusercontent.net",
-  ],
+    if (origin.endsWith(".vusercontent.net")) return true;
+    return false;
+  },
   database: prismaAdapter(db, { provider: "postgresql" }),
   emailAndPassword: {
     enabled: true,
