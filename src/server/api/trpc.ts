@@ -1,15 +1,19 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
-import { auth } from "~/server/auth";
+import { createClient } from "~/lib/supabase/server";
 
 // Context creation
 export const createTRPCContext = async (opts: { headers: Headers }) => {
-  const session = await auth.api.getSession({ headers: opts.headers });
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   return {
     headers: opts.headers,
-    session,
+    user,
+    supabase,
   };
 };
 
@@ -42,14 +46,14 @@ export const createCallerFactory = t.createCallerFactory;
 export const router = t.router;
 
 const authMiddleware = t.middleware(async ({ next, ctx }) => {
-  if (!ctx.session) {
+  if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
   return next({
     ctx: {
       ...ctx,
-      session: ctx.session,
+      user: ctx.user,
     },
   });
 });
