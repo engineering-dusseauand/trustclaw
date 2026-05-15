@@ -8,11 +8,57 @@ import {
   trpcToastOnError,
 } from "~/components/core/toast-notifications";
 import type { RouterOutputs } from "~/clients/trpc";
+import { SupabaseProjectPicker } from "./supabase-project-picker";
 
 type ToolkitItem = RouterOutputs["toolkits"]["getToolkits"]["items"][number];
 
 interface ToolkitCardProps {
   toolkit: ToolkitItem;
+}
+
+/**
+ * When the SUPABASE toolkit is connected, the "Connected" badge becomes a
+ * button that opens the project picker. The badge changes color based on
+ * whether a project is pinned — unpinned is amber (the agent will refuse
+ * Supabase tool calls until configured).
+ */
+function SupabasePinBadge() {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = trpc.toolkits.getSupabaseProjectRef.useQuery();
+  const projectRef = data?.projectRef ?? null;
+
+  if (isLoading) {
+    return (
+      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        Connected
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        className={
+          projectRef
+            ? "max-w-[160px] truncate rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/25 dark:text-green-400"
+            : "rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/25 dark:text-amber-400"
+        }
+        title={
+          projectRef
+            ? `Pinned project: ${projectRef}. Click to change.`
+            : "Pick a Supabase project to allow the agent to use Supabase tools."
+        }
+      >
+        {projectRef ? `Project: ${projectRef}` : "Pick project"}
+      </button>
+      <SupabaseProjectPicker open={open} onOpenChange={setOpen} />
+    </>
+  );
 }
 
 export function ToolkitCard({ toolkit }: ToolkitCardProps) {
@@ -26,6 +72,10 @@ export function ToolkitCard({ toolkit }: ToolkitCardProps) {
   });
 
   const isConnected = toolkit.connected || toolkit.noAuth;
+  // Composio toolkit slugs are lowercase (e.g. "gmail", "slack", "supabase").
+  // Tool *names* (e.g. SUPABASE_LIST_PROJECTS) are uppercase — different
+  // namespace, don't conflate.
+  const isSupabase = toolkit.slug.toLowerCase() === "supabase";
   const statusLabel = toolkit.connected
     ? "Connected"
     : toolkit.noAuth
@@ -77,9 +127,13 @@ export function ToolkitCard({ toolkit }: ToolkitCardProps) {
           {/* Top-right: status badge or connect button */}
           <div className="absolute right-3 top-3 z-[1]">
             {isConnected ? (
-              <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
-                {statusLabel}
-              </span>
+              isSupabase && toolkit.connected ? (
+                <SupabasePinBadge />
+              ) : (
+                <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
+                  {statusLabel}
+                </span>
+              )
             ) : (
               <Button
                 size="sm"
