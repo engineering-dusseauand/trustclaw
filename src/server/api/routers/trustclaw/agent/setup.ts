@@ -96,11 +96,11 @@ const ORG_LEVEL_BLOCKED_ERROR =
   "blocked while a project is pinned. Only the pinned project can be " +
   "operated on.";
 
-function isSupabaseSlug(slug: unknown): slug is string {
+export function isSupabaseSlug(slug: unknown): slug is string {
   return typeof slug === "string" && slug.toUpperCase().startsWith("SUPABASE_");
 }
 
-function isSupabaseToolkit(name: unknown): boolean {
+export function isSupabaseToolkit(name: unknown): boolean {
   return typeof name === "string" && name.toLowerCase() === "supabase";
 }
 
@@ -114,7 +114,7 @@ function isSupabaseToolkit(name: unknown): boolean {
  * Returns the rewritten input plus a list of indices we synthesized
  * errors for (used to patch the response on the way back).
  */
-function rewriteMultiExecInput(
+export function rewriteMultiExecInput(
   input: unknown,
   pinnedRef: string | null,
 ): {
@@ -173,7 +173,7 @@ function rewriteMultiExecInput(
  * Patches MULTI_EXECUTE_TOOL's result so that blocked slots show our
  * synthesized error rather than Composio's "unknown tool slug" complaint.
  */
-function patchMultiExecResult(
+export function patchMultiExecResult(
   result: unknown,
   blockedIndices: Map<number, string>,
 ): unknown {
@@ -223,7 +223,7 @@ function patchMultiExecResult(
  * The agent should not be able to learn other projects exist by
  * inspecting search responses.
  */
-function scrubSearchToolsResult(
+export function scrubSearchToolsResult(
   result: unknown,
   pinnedRef: string | null,
 ): unknown {

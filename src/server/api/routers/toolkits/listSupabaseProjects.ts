@@ -33,7 +33,7 @@ const projectRow = z
 type ProjectRow = z.infer<typeof projectRow>;
 
 /** Walk a value and return every array we encounter. */
-function collectArrays(value: unknown, out: unknown[][] = []): unknown[][] {
+export function collectArrays(value: unknown, out: unknown[][] = []): unknown[][] {
   if (Array.isArray(value)) {
     out.push(value);
     for (const v of value) collectArrays(v, out);
@@ -46,7 +46,7 @@ function collectArrays(value: unknown, out: unknown[][] = []): unknown[][] {
 }
 
 /** Pick the first array whose rows look like Supabase projects. */
-function findProjectArray(value: unknown): ProjectRow[] | null {
+export function findProjectArray(value: unknown): ProjectRow[] | null {
   for (const arr of collectArrays(value)) {
     if (arr.length === 0) continue;
     const head = arr[0];
