@@ -74,6 +74,34 @@ const URL_REFUSED_ERROR =
   "refuses to parse. Call the structured `owner` + `repo` variant of " +
   "this action instead.";
 
+const FOREIGN_LISTING_BLOCKED_ERROR =
+  "This GitHub action enumerates repos that belong to another user, " +
+  "an organization, or all of GitHub. It's blocked because pinning " +
+  "operates per repo. Use a repo-scoped tool against a pinned repo " +
+  "instead.";
+
+/**
+ * Tools that enumerate repos outside the user's personal repo list.
+ * Blocked entirely — pinning operates at owner/repo granularity, so
+ * org-wide and cross-user enumeration is always out of scope.
+ */
+const GITHUB_FOREIGN_LISTING_TOOLS = new Set([
+  "GITHUB_LIST_REPOSITORIES_FOR_A_USER",
+  "GITHUB_LIST_REPOSITORIES_OF_AN_ORG",
+  "GITHUB_LIST_ORGANIZATION_REPOSITORIES",
+  "GITHUB_LIST_PUBLIC_REPOSITORIES",
+]);
+
+/**
+ * Tools that return the user's own repo list — allowed, but the result
+ * is post-filtered to only include pinned repos. The agent can still
+ * find pinned repos by name but never sees anything outside the pin
+ * set.
+ */
+const GITHUB_LISTING_TOOLS_TO_FILTER = new Set([
+  "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER",
+]);
+
 /**
  * Destructive slug detection. Conservative — when in doubt, deny.
  * Anything matching this is blocked unless `allowDestructive` is true.
@@ -220,12 +248,15 @@ export function rewriteGithubBatch(
 ): {
   input: unknown;
   blockedIndices: Map<number, string>;
+  /** Indices whose result must be post-filtered to only include pinned repos. */
+  repoFilterIndices: Set<number>;
 } {
   const blockedIndices = new Map<number, string>();
-  if (!input || typeof input !== "object") return { input, blockedIndices };
+  const repoFilterIndices = new Set<number>();
+  if (!input || typeof input !== "object") return { input, blockedIndices, repoFilterIndices };
 
   const obj = { ...(input as Record<string, unknown>) };
-  if (!Array.isArray(obj.tools)) return { input: obj, blockedIndices };
+  if (!Array.isArray(obj.tools)) return { input: obj, blockedIndices, repoFilterIndices };
 
   obj.tools = (obj.tools as unknown[]).map((entry: unknown, idx: number) => {
     if (!entry || typeof entry !== "object") return entry;
@@ -253,7 +284,25 @@ export function rewriteGithubBatch(
       return rec;
     }
 
-    // Destructive guard runs first, even on pinned repos.
+    // Foreign-listing tools enumerate outside the user's own repos —
+    // blocked even when pins exist, since pinning is per-repo.
+    if (GITHUB_FOREIGN_LISTING_TOOLS.has(upper)) {
+      const owner =
+        getStringField(args, "owner") ??
+        getStringField(args, "org") ??
+        getStringField(args, "organization") ??
+        getStringField(args, "username");
+      block("org_level_blocked", FOREIGN_LISTING_BLOCKED_ERROR, owner);
+      return rec;
+    }
+
+    // Listing the user's own repos → allow but mark for post-filter.
+    if (GITHUB_LISTING_TOOLS_TO_FILTER.has(upper)) {
+      repoFilterIndices.add(idx);
+      return rec;
+    }
+
+    // Destructive guard runs after blocklist checks but before classification.
     if (!allowDestructive && isDestructiveGithubSlug(slug)) {
       const owner = getStringField(args, "owner");
       const repo = getStringField(args, "repo");
@@ -304,47 +353,102 @@ export function rewriteGithubBatch(
     }
   });
 
-  return { input: obj, blockedIndices };
+  return { input: obj, blockedIndices, repoFilterIndices };
 }
 
 /**
- * Same response patching shape as the Supabase wrapper. Kept identical
- * so future refactors can extract a shared helper.
+ * Walks a value tree and trims any array whose elements look like
+ * GitHub repo objects (have `full_name: string`) down to those whose
+ * full_name is in the pinned set (case-insensitive). All other
+ * structure is preserved. Used to scope LIST_REPOSITORIES results
+ * to the pinned subset without changing the shape Composio returned.
+ */
+export function filterReposInResult(value: unknown, pinnedRepos: string[]): unknown {
+  const pinnedSet = new Set(pinnedRepos.map((r) => r.toLowerCase()));
+  function walk(v: unknown): unknown {
+    if (Array.isArray(v)) {
+      const looksLikeRepoArray =
+        v.length > 0 &&
+        v.every(
+          (item) =>
+            item != null &&
+            typeof item === "object" &&
+            typeof (item as Record<string, unknown>).full_name === "string",
+        );
+      if (looksLikeRepoArray) {
+        return v.filter((item) => {
+          const fullName = ((item as Record<string, unknown>).full_name as string).toLowerCase();
+          return pinnedSet.has(fullName);
+        });
+      }
+      return v.map(walk);
+    }
+    if (v && typeof v === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, vv] of Object.entries(v as Record<string, unknown>)) {
+        out[k] = walk(vv);
+      }
+      return out;
+    }
+    return v;
+  }
+  return walk(value);
+}
+
+/**
+ * Patches MULTI_EXECUTE_TOOL's result. Two transforms:
+ *  1. Blocked slots have their response replaced with a synthesized
+ *     error so the agent sees a structured failure (rather than
+ *     Composio's "unknown tool slug" surface from the renamed slug).
+ *  2. Repo-filter slots have any repo arrays in their response trimmed
+ *     to the pinned set, so the agent's view of "your repos" matches
+ *     what it can actually operate on.
  */
 export function patchGithubBatchResult(
   result: unknown,
   blockedIndices: Map<number, string>,
+  repoFilterIndices: Set<number> = new Set<number>(),
+  pinnedRepos: string[] = [],
 ): unknown {
-  if (blockedIndices.size === 0) return result;
+  if (blockedIndices.size === 0 && repoFilterIndices.size === 0) return result;
   if (!result || typeof result !== "object") return result;
 
   const out = { ...(result as Record<string, unknown>) };
 
   if (Array.isArray(out.response_data)) {
-    out.response_data = (out.response_data as unknown[]).map((item: unknown, i: number) =>
-      blockedIndices.has(i)
-        ? {
-            ...(typeof item === "object" && item ? item : {}),
-            successful: false,
-            error: blockedIndices.get(i),
-            data: {},
-          }
-        : item,
-    );
+    out.response_data = (out.response_data as unknown[]).map((item: unknown, i: number) => {
+      if (blockedIndices.has(i)) {
+        return {
+          ...(typeof item === "object" && item ? item : {}),
+          successful: false,
+          error: blockedIndices.get(i),
+          data: {},
+        };
+      }
+      if (repoFilterIndices.has(i)) {
+        return filterReposInResult(item, pinnedRepos);
+      }
+      return item;
+    });
   }
 
   if (out.data && typeof out.data === "object") {
     const dataObj = { ...(out.data as Record<string, unknown>) };
     if (Array.isArray(dataObj.results)) {
       dataObj.results = (dataObj.results as unknown[]).map((item: unknown, i: number) => {
-        if (!blockedIndices.has(i)) return item;
-        const errResponse = {
-          successful: false,
-          error: blockedIndices.get(i),
-          data: {},
-        };
-        if (!item || typeof item !== "object") return { response: errResponse };
-        return { ...(item as Record<string, unknown>), response: errResponse };
+        if (blockedIndices.has(i)) {
+          const errResponse = {
+            successful: false,
+            error: blockedIndices.get(i),
+            data: {},
+          };
+          if (!item || typeof item !== "object") return { response: errResponse };
+          return { ...(item as Record<string, unknown>), response: errResponse };
+        }
+        if (repoFilterIndices.has(i)) {
+          return filterReposInResult(item, pinnedRepos);
+        }
+        return item;
       });
       out.data = dataObj;
     }
@@ -359,7 +463,9 @@ const GITHUB_HIDDEN_SLUGS = new Set<string>([
   "GITHUB_SEARCH_REPOSITORIES",
   // Discovery-only tools that surface other users' or org-wide repo lists.
   "GITHUB_LIST_REPOSITORIES_FOR_A_USER",
+  "GITHUB_LIST_REPOSITORIES_OF_AN_ORG",
   "GITHUB_LIST_ORGANIZATION_REPOSITORIES",
+  "GITHUB_LIST_PUBLIC_REPOSITORIES",
 ]);
 
 /**
@@ -453,10 +559,12 @@ export function pinGithubRepos(
         execute: async (input: unknown, options) => {
           let rewritten: unknown = input;
           let blockedIndices = new Map<number, string>();
+          let repoFilterIndices = new Set<number>();
           try {
             const r = rewriteGithubBatch(input, normalisedPins, allowDestructive, recordBlock);
             rewritten = r.input;
             blockedIndices = r.blockedIndices;
+            repoFilterIndices = r.repoFilterIndices;
           } catch (err) {
             console.error("[pinGithubRepos] rewriteGithubBatch failed:", err);
             rewritten = input;
@@ -465,7 +573,7 @@ export function pinGithubRepos(
           const result = await originalExecute(rewritten, options);
           try {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return patchGithubBatchResult(result, blockedIndices);
+            return patchGithubBatchResult(result, blockedIndices, repoFilterIndices, normalisedPins);
           } catch (err) {
             console.error("[pinGithubRepos] patchGithubBatchResult failed:", err);
             // eslint-disable-next-line @typescript-eslint/no-unsafe-return

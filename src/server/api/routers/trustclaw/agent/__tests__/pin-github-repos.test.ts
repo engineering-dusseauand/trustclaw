@@ -7,6 +7,7 @@ import {
   classifySearchSlug,
   isDestructiveGithubSlug,
   rewriteSearchQuery,
+  filterReposInResult,
   type RecordGithubBlock,
 } from "../pin-github-repos";
 
@@ -271,6 +272,176 @@ describe("rewriteGithubBatch", () => {
     const input = single("GITHUB_DELETE_A_REPOSITORY", { owner: "acme", repo: "widget" });
     // Should not throw.
     expect(() => rewriteGithubBatch(input, pins, false, throwing)).not.toThrow();
+  });
+
+  it("blocks foreign listing tools (LIST_REPOSITORIES_FOR_A_USER)", () => {
+    const record = vi.fn();
+    const input = single("GITHUB_LIST_REPOSITORIES_FOR_A_USER", { username: "octocat" });
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, record);
+    expect(blockedIndices.size).toBe(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "org_level_blocked",
+        toolSlug: "GITHUB_LIST_REPOSITORIES_FOR_A_USER",
+        attemptedRepo: "octocat",
+      }),
+    );
+  });
+
+  it("blocks GITHUB_LIST_REPOSITORIES_OF_AN_ORG", () => {
+    const record = vi.fn();
+    const input = single("GITHUB_LIST_REPOSITORIES_OF_AN_ORG", { org: "vercel" });
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, record);
+    expect(blockedIndices.size).toBe(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "org_level_blocked" }),
+    );
+  });
+
+  it("blocks GITHUB_LIST_PUBLIC_REPOSITORIES", () => {
+    const input = single("GITHUB_LIST_PUBLIC_REPOSITORIES", {});
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, noopRecord);
+    expect(blockedIndices.size).toBe(1);
+  });
+
+  it("allows LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER and marks for post-filter", () => {
+    const input = single("GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER", {});
+    const { blockedIndices, repoFilterIndices } = rewriteGithubBatch(
+      input,
+      pins,
+      false,
+      noopRecord,
+    );
+    expect(blockedIndices.size).toBe(0);
+    expect(repoFilterIndices.size).toBe(1);
+    expect(repoFilterIndices.has(0)).toBe(true);
+  });
+});
+
+describe("filterReposInResult", () => {
+  const pins = ["acme/widget", "acme/foo"];
+
+  it("returns non-array/non-object values unchanged", () => {
+    expect(filterReposInResult("hello", pins)).toBe("hello");
+    expect(filterReposInResult(42, pins)).toBe(42);
+    expect(filterReposInResult(null, pins)).toBe(null);
+  });
+
+  it("filters a top-level array of repo objects to the pinned set", () => {
+    const input = [
+      { full_name: "acme/widget", id: 1 },
+      { full_name: "acme/widget", id: 1 }, // duplicate same pin
+      { full_name: "rogue/bad", id: 2 },
+      { full_name: "acme/foo", id: 3 },
+    ];
+    const out = filterReposInResult(input, pins) as Array<{ full_name: string }>;
+    expect(out.map((r) => r.full_name)).toEqual(["acme/widget", "acme/widget", "acme/foo"]);
+  });
+
+  it("is case-insensitive on full_name comparison", () => {
+    const input = [{ full_name: "ACME/Widget" }];
+    const out = filterReposInResult(input, pins) as Array<{ full_name: string }>;
+    expect(out).toHaveLength(1);
+  });
+
+  it("walks nested structures and filters repo arrays in place", () => {
+    const input = {
+      successful: true,
+      data: {
+        total_count: 100,
+        repositories: [
+          { full_name: "acme/widget" },
+          { full_name: "rogue/bad" },
+        ],
+      },
+    };
+    const out = filterReposInResult(input, pins) as {
+      successful: boolean;
+      data: { repositories: Array<{ full_name: string }> };
+    };
+    expect(out.data.repositories).toHaveLength(1);
+    expect(out.data.repositories[0]!.full_name).toBe("acme/widget");
+    expect(out.successful).toBe(true);
+  });
+
+  it("does not touch arrays that don't look like repo arrays", () => {
+    const input = {
+      tags: ["v1", "v2"], // string array, not repos
+      numbers: [1, 2, 3], // number array
+      mixed: [{ foo: "bar" }, { baz: "qux" }], // objects but no full_name
+    };
+    const out = filterReposInResult(input, pins) as typeof input;
+    expect(out.tags).toEqual(["v1", "v2"]);
+    expect(out.numbers).toEqual([1, 2, 3]);
+    expect(out.mixed).toEqual([{ foo: "bar" }, { baz: "qux" }]);
+  });
+});
+
+describe("patchGithubBatchResult repo-filter mode", () => {
+  const pins = ["acme/widget"];
+
+  it("filters repo arrays in response_data slots flagged for filtering (shape A)", () => {
+    const result = {
+      response_data: [
+        {
+          successful: true,
+          data: {
+            repositories: [
+              { full_name: "acme/widget" },
+              { full_name: "rogue/bad" },
+            ],
+          },
+        },
+        { successful: true, data: { something_else: "ignored" } },
+      ],
+    };
+    const out = patchGithubBatchResult(
+      result,
+      new Map(),
+      new Set([0]),
+      pins,
+    ) as { response_data: Array<{ data: { repositories?: Array<{ full_name: string }> } }> };
+    expect(out.response_data[0]!.data.repositories).toHaveLength(1);
+    expect(out.response_data[0]!.data.repositories![0]!.full_name).toBe("acme/widget");
+    // Index 1 not flagged → untouched
+    expect(out.response_data[1]!.data).toEqual({ something_else: "ignored" });
+  });
+
+  it("filters repo arrays in data.results slots flagged for filtering (shape B)", () => {
+    const result = {
+      data: {
+        results: [
+          {
+            response: {
+              successful: true,
+              data: [
+                { full_name: "acme/widget" },
+                { full_name: "rogue/bad" },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const out = patchGithubBatchResult(
+      result,
+      new Map(),
+      new Set([0]),
+      pins,
+    ) as {
+      data: {
+        results: Array<{
+          response: { data: Array<{ full_name: string }> };
+        }>;
+      };
+    };
+    expect(out.data.results[0]!.response.data).toHaveLength(1);
+    expect(out.data.results[0]!.response.data[0]!.full_name).toBe("acme/widget");
+  });
+
+  it("returns result unchanged when neither blocked nor filtered", () => {
+    const result = { response_data: [{ data: { foo: "bar" } }] };
+    expect(patchGithubBatchResult(result, new Map(), new Set(), [])).toBe(result);
   });
 });
 

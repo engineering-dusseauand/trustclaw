@@ -36,14 +36,14 @@ export function useToolFocusHighlight() {
 
 export function useToolCallCount(messages: UIMessage[]): number {
   return useMemo(() => {
-    let count = 0;
+    const seen = new Set<string>();
     for (const msg of messages) {
       if (msg.role !== "assistant") continue;
       for (const part of msg.parts) {
-        if (isToolUIPart(part)) count++;
+        if (isToolUIPart(part)) seen.add(part.toolCallId);
       }
     }
-    return count;
+    return seen.size;
   }, [messages]);
 }
 
@@ -61,14 +61,48 @@ export function TerminalPane({ messages, status, onHide }: TerminalPaneProps) {
   const toolCount = useToolCallCount(messages);
 
   const logEntries = useMemo(() => {
+    // React keys here are part.toolCallId. The AI SDK message tree can
+    // occasionally surface the same toolCallId twice (suspected causes:
+    // resumable-stream replay overlap, history-invalidate-after-persist
+    // mismatches between live AI-SDK message IDs and DB cuids, or agent
+    // step retries). Treating later occurrences as updates of the earlier
+    // entry keeps the React key invariant intact regardless of upstream
+    // duplication.
     const entries: TerminalLogEntryData[] = [];
+    const indexById = new Map<string, number>();
+    let collisions = 0;
     for (const msg of messages) {
       if (msg.role !== "assistant") continue;
       for (const part of msg.parts) {
-        if (isToolUIPart(part)) {
-          entries.push(toolCallToLogEntry(part, status));
+        if (!isToolUIPart(part)) continue;
+        const id = part.toolCallId;
+        const next = toolCallToLogEntry(part, status);
+        const existingIdx = indexById.get(id);
+        if (existingIdx === undefined) {
+          indexById.set(id, entries.length);
+          entries.push(next);
+        } else {
+          // Keep the most informative version. "complete" > "executing",
+          // "error" wins over "complete" (error is terminal too but more
+          // important to surface), later occurrence wins on ties.
+          const prev = entries[existingIdx]!;
+          const prefersNext =
+            (next.status === "complete" && prev.status === "executing") ||
+            (next.status === "error" && prev.status !== "error") ||
+            next.status === prev.status;
+          if (prefersNext) entries[existingIdx] = next;
+          collisions++;
         }
       }
+    }
+    if (collisions > 0 && process.env.NODE_ENV !== "production") {
+      // Surface upstream issues without breaking rendering. Tracking
+      // collisions here lets future debugging spot whether the rate
+      // changes with code that touches the agent stream or history flow.
+      console.warn(
+        `[TerminalPane] collapsed ${collisions} duplicate toolCallId(s) ` +
+          `across ${messages.length} messages`,
+      );
     }
     return entries;
   }, [messages, status]);

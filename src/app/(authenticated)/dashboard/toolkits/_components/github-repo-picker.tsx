@@ -135,34 +135,31 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px]">
-        <DialogHeader>
-          <DialogTitle>Pin GitHub repos</DialogTitle>
-          <DialogDescription>
-            The agent can only operate on the repos you pin here. GitHub
-            tokens are user-scoped, so pinning is enforced in TrustClaw —
-            not at the OAuth boundary. Max {MAX_PINNED_GITHUB_REPOS} repos.
+      <DialogContent
+        className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-[540px]"
+      >
+        <DialogHeader className="space-y-1 border-b px-6 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="text-base">Pin GitHub repos</DialogTitle>
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {selected.size} / {MAX_PINNED_GITHUB_REPOS}
+            </span>
+          </div>
+          <DialogDescription className="text-sm">
+            The agent can only operate on repos you pin here.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <Input
-              placeholder="Search repos..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              disabled={isLoading}
-              className="flex-1"
-            />
-            <span className="whitespace-nowrap text-xs text-muted-foreground">
-              {selected.size} / {MAX_PINNED_GITHUB_REPOS} pinned
-            </span>
-          </div>
-
-          {/* Add-by-name for collaborator/org repos not in the personal list. */}
+        <div className="flex flex-col gap-2 border-b px-6 py-3">
+          <Input
+            placeholder="Search your repos..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            disabled={isLoading}
+          />
           <div className="flex items-center gap-2">
             <Input
-              placeholder="owner/repo (e.g. acme/widget)"
+              placeholder="Add by name: owner/repo"
               value={manualEntry}
               onChange={(e) => setManualEntry(e.target.value)}
               onKeyDown={(e) => {
@@ -184,7 +181,9 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
               Add
             </Button>
           </div>
+        </div>
 
+        <div className="flex-1 overflow-y-auto px-6 py-3">
           {isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-12 w-full" />
@@ -201,24 +200,24 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
                 Try again
               </Button>
             </div>
+          ) : filteredRepos.length === 0 && pinnedNotInList.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {search ? "No repos match your search." : "No repos found."}
+            </p>
           ) : (
-            <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
-              {/* Manually-added or pinned-but-off-page repos at the top. */}
+            <div className="space-y-1.5">
               {pinnedNotInList.map((fullName) => (
                 <Label
                   key={`manual-${fullName}`}
-                  className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-accent/30 p-3"
+                  className="flex cursor-pointer items-center gap-3 rounded-md border border-border bg-accent/30 p-2.5"
                 >
-                  <Checkbox
-                    checked
-                    onCheckedChange={() => toggle(fullName)}
-                  />
+                  <Checkbox checked onCheckedChange={() => toggle(fullName)} />
                   <div className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-medium text-foreground">
                       {fullName}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Added by name (not in your personal repos)
+                      Added by name
                     </span>
                   </div>
                   <button
@@ -235,12 +234,6 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
                 </Label>
               ))}
 
-              {filteredRepos.length === 0 && pinnedNotInList.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No repos match your search.
-                </p>
-              ) : null}
-
               {filteredRepos.map((repo) => {
                 const lowered = repo.fullName.toLowerCase();
                 const isSelected = selected.has(lowered);
@@ -250,7 +243,7 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
                     key={`${repo.id}`}
                     htmlFor={`repo-${repo.id}`}
                     className={
-                      "flex items-start gap-3 rounded-md border border-border p-3 transition-colors " +
+                      "flex items-center gap-3 rounded-md border border-border p-2.5 transition-colors " +
                       (disabled
                         ? "cursor-not-allowed opacity-50"
                         : "cursor-pointer hover:bg-accent/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-accent/40")
@@ -263,22 +256,16 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
                       disabled={disabled}
                     />
                     <div className="flex min-w-0 flex-1 flex-col">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-medium text-foreground">
                           {repo.fullName}
                         </span>
                         {repo.private ? (
-                          <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="private" />
                         ) : null}
                         {repo.archived ? (
                           <span className="rounded-sm bg-muted px-1 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
                             archived
-                          </span>
-                        ) : null}
-                        {isSelected ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-1.5 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
-                            <Check className="h-3 w-3" />
-                            Pinned
                           </span>
                         ) : null}
                       </div>
@@ -295,7 +282,7 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 border-t px-6 py-3 sm:gap-2">
           <DialogClose asChild>
             <Button variant="outline" disabled={setMutation.isPending}>
               Cancel
@@ -308,7 +295,10 @@ export function GithubRepoPicker({ open, onOpenChange }: GithubRepoPickerProps) 
                 Saving...
               </>
             ) : (
-              "Save pins"
+              <>
+                <Check className="h-4 w-4" />
+                Save pins
+              </>
             )}
           </Button>
         </DialogFooter>
