@@ -9,6 +9,7 @@ import {
 } from "~/components/core/toast-notifications";
 import type { RouterOutputs } from "~/clients/trpc";
 import { SupabaseProjectPicker } from "./supabase-project-picker";
+import { GithubRepoPicker } from "./github-repo-picker";
 
 type ToolkitItem = RouterOutputs["toolkits"]["getToolkits"]["items"][number];
 
@@ -22,6 +23,50 @@ interface ToolkitCardProps {
  * whether a project is pinned — unpinned is amber (the agent will refuse
  * Supabase tool calls until configured).
  */
+/**
+ * When the GITHUB toolkit is connected, the "Connected" badge becomes a
+ * button that opens the repo picker. Amber when no repos are pinned
+ * (agent refuses Github tools); green with a count once pinned.
+ */
+function GithubPinBadge() {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = trpc.toolkits.getGithubPinnedRepos.useQuery();
+  const pinned = data?.pinnedRepos ?? [];
+
+  if (isLoading) {
+    return (
+      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        Connected
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        className={
+          pinned.length > 0
+            ? "rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/25 dark:text-green-400"
+            : "rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/25 dark:text-amber-400"
+        }
+        title={
+          pinned.length > 0
+            ? `Agent restricted to ${pinned.length} repo${pinned.length === 1 ? "" : "s"}. Click to change.`
+            : "Pick repos to allow the agent to use GitHub tools."
+        }
+      >
+        {pinned.length > 0 ? `${pinned.length} repo${pinned.length === 1 ? "" : "s"}` : "Pick repos"}
+      </button>
+      <GithubRepoPicker open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 function SupabasePinBadge() {
   const [open, setOpen] = useState(false);
   const { data, isLoading } = trpc.toolkits.getSupabaseProjectRef.useQuery();
@@ -75,7 +120,9 @@ export function ToolkitCard({ toolkit }: ToolkitCardProps) {
   // Composio toolkit slugs are lowercase (e.g. "gmail", "slack", "supabase").
   // Tool *names* (e.g. SUPABASE_LIST_PROJECTS) are uppercase — different
   // namespace, don't conflate.
-  const isSupabase = toolkit.slug.toLowerCase() === "supabase";
+  const slugLower = toolkit.slug.toLowerCase();
+  const isSupabase = slugLower === "supabase";
+  const isGithub = slugLower === "github";
   const statusLabel = toolkit.connected
     ? "Connected"
     : toolkit.noAuth
@@ -129,6 +176,8 @@ export function ToolkitCard({ toolkit }: ToolkitCardProps) {
             {isConnected ? (
               isSupabase && toolkit.connected ? (
                 <SupabasePinBadge />
+              ) : isGithub && toolkit.connected ? (
+                <GithubPinBadge />
               ) : (
                 <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
                   {statusLabel}

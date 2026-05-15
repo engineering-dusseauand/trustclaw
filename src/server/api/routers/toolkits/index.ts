@@ -4,6 +4,11 @@ import { getAuthLink } from "./getAuthLink";
 import { listSupabaseProjects } from "./listSupabaseProjects";
 import { getSupabaseProjectRef } from "./getSupabaseProjectRef";
 import { setSupabaseProjectRef } from "./setSupabaseProjectRef";
+import { listGithubRepos } from "./listGithubRepos";
+import { getGithubPinnedRepos } from "./getGithubPinnedRepos";
+import { setGithubPinnedRepos } from "./setGithubPinnedRepos";
+import { setAllowDestructiveGithubActions } from "./setAllowDestructiveGithubActions";
+import { getRecentGithubBlocks } from "./getRecentGithubBlocks";
 
 export const toolkitsRouter = router({
   getToolkits,
@@ -11,4 +16,9 @@ export const toolkitsRouter = router({
   listSupabaseProjects,
   getSupabaseProjectRef,
   setSupabaseProjectRef,
+  listGithubRepos,
+  getGithubPinnedRepos,
+  setGithubPinnedRepos,
+  setAllowDestructiveGithubActions,
+  getRecentGithubBlocks,
 });

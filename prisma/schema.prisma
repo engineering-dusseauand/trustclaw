@@ -111,6 +111,17 @@ model ComposioClawInstance {
   // the agent cannot reach other projects in the user's Supabase org.
   supabaseProjectRef String?
 
+  // Pinned GitHub repos. When non-empty, the agent tool wrapper restricts
+  // every GITHUB_* tool call to one of these owner/repo combinations and
+  // blocks all org-level and cross-repo enumeration. Stored lowercased.
+  // Capped at 20 entries at the tRPC layer.
+  pinnedGithubRepos String[] @default([])
+
+  // Destructive GitHub actions (DELETE_REPO, MERGE_PULL_REQUEST, force-push,
+  // etc.) are blocked by default even within pinned repos. Toggle this on
+  // to allow the agent to invoke them.
+  allowDestructiveGithubActions Boolean @default(false)
+
   // Agent identity, stored as text
   soulPrompt      String?
   identityPrompt  String?
@@ -128,12 +139,40 @@ model ComposioClawInstance {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  messages Message[]
-  memories Memory[]
-  cronJobs CronJob[]
+  messages      Message[]
+  memories      Memory[]
+  cronJobs      CronJob[]
+  githubBlocks  GithubBlockedAction[]
 
   @@index([userId])
   @@map("composio_claw_instance")
+}
+
+/// Records each time the agent attempted a blocked GitHub tool call. Used
+/// for surfacing UX hints ("the agent tried foo/bar — want to pin it?")
+/// and for auditing what the agent has been asked to do. Pruned by app
+/// logic, not by FK cascade.
+enum GithubBlockReason {
+  not_pinned
+  destructive_blocked
+  org_level_blocked
+  search_blocked
+  url_arg_refused
+  no_pins_configured
+}
+
+model GithubBlockedAction {
+  id            String            @id @default(cuid())
+  instanceId    String
+  toolSlug      String
+  attemptedRepo String?
+  reason        GithubBlockReason
+  createdAt     DateTime          @default(now())
+
+  instance ComposioClawInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, createdAt])
+  @@map("composio_claw_github_block")
 }
 
 model Message {

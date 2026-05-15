@@ -10,6 +10,7 @@ import { TelegramSettings } from "./telegram-settings";
 import { CronJobsSettings } from "./cron-jobs-settings";
 import { MemorySettings } from "./memory-settings";
 import { ConversationSettings } from "./conversation-settings";
+import { GithubSettings } from "./github-settings";
 import { DangerZone } from "./danger-zone";
 import { SettingsPageSkeleton } from "./settings-page.skeleton";
 
@@ -74,6 +75,10 @@ export function SettingsPageClient() {
 
       <ErrorBoundary>
         <ConversationSettings />
+      </ErrorBoundary>
+
+      <ErrorBoundary>
+        <GithubSettings />
       </ErrorBoundary>
 
       <ErrorBoundary>

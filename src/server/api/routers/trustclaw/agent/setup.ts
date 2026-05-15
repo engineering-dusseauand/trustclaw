@@ -24,6 +24,7 @@ import {
 } from "./context/token-estimation";
 import { stripToolResultEchoes } from "./strip-tool-echoes";
 import { clearStreamingMessage } from "~/server/clients/redis";
+import { pinGithubRepos } from "./pin-github-repos";
 import type { ReconstructedMessage } from "./types";
 
 type MessageSource = "web" | "telegram" | "cron";
@@ -129,7 +130,7 @@ export function rewriteMultiExecInput(
   const obj = { ...(input as Record<string, unknown>) };
   if (!Array.isArray(obj.tools)) return { input: obj, blockedIndices };
 
-  obj.tools = obj.tools.map((entry, idx) => {
+  obj.tools = (obj.tools as unknown[]).map((entry: unknown, idx: number) => {
     if (!entry || typeof entry !== "object") return entry;
     const rec = { ...(entry as Record<string, unknown>) };
     const slug = rec.tool_slug;
@@ -184,7 +185,7 @@ export function patchMultiExecResult(
 
   // Shape A: result.response_data is an array
   if (Array.isArray(out.response_data)) {
-    out.response_data = out.response_data.map((item, i) =>
+    out.response_data = (out.response_data as unknown[]).map((item: unknown, i: number) =>
       blockedIndices.has(i)
         ? {
             ...(typeof item === "object" && item ? item : {}),
@@ -200,7 +201,7 @@ export function patchMultiExecResult(
   if (out.data && typeof out.data === "object") {
     const dataObj = { ...(out.data as Record<string, unknown>) };
     if (Array.isArray(dataObj.results)) {
-      dataObj.results = dataObj.results.map((item, i) => {
+      dataObj.results = (dataObj.results as unknown[]).map((item: unknown, i: number) => {
         if (!blockedIndices.has(i)) return item;
         const errResponse = {
           successful: false,
@@ -241,8 +242,8 @@ export function scrubSearchToolsResult(
   //    that mentions only the pinned project. Drops emails, project lists,
   //    org names, and anything else Composio surfaces.
   if (Array.isArray(inner.toolkit_connection_statuses)) {
-    inner.toolkit_connection_statuses = inner.toolkit_connection_statuses.map(
-      (entry) => {
+    inner.toolkit_connection_statuses = (inner.toolkit_connection_statuses as unknown[]).map(
+      (entry: unknown) => {
         if (!entry || typeof entry !== "object") return entry;
         const rec = entry as Record<string, unknown>;
         if (!isSupabaseToolkit(rec.toolkit)) return entry;
@@ -270,7 +271,7 @@ export function scrubSearchToolsResult(
   // 3. Strip org-level slugs out of the `results[].primary_tool_slugs` /
   //    `related_tool_slugs` arrays so suggestion paths can't surface them.
   if (Array.isArray(inner.results)) {
-    inner.results = inner.results.map((r) => {
+    inner.results = (inner.results as unknown[]).map((r: unknown) => {
       if (!r || typeof r !== "object") return r;
       const rec = { ...(r as Record<string, unknown>) };
       for (const key of ["primary_tool_slugs", "related_tool_slugs"]) {
@@ -306,14 +307,28 @@ function pinSupabaseProjectRef(
       wrapped[name] = {
         ...tool,
         execute: async (input: unknown, options) => {
-          const { input: rewritten, blockedIndices } = rewriteMultiExecInput(
-            input,
-            pinnedRef,
-          );
+          let rewritten: unknown = input;
+          let blockedIndices = new Map<number, string>();
+          try {
+            const r = rewriteMultiExecInput(input, pinnedRef);
+            rewritten = r.input;
+            blockedIndices = r.blockedIndices;
+          } catch (err) {
+            console.error("[pinSupabaseProjectRef] rewriteMultiExecInput failed:", err);
+            // Fall through: forward the original input. This may leak but
+            // keeps the agent functional.
+            rewritten = input;
+          }
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           const result = await originalExecute(rewritten, options);
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return patchMultiExecResult(result, blockedIndices);
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return patchMultiExecResult(result, blockedIndices);
+          } catch (err) {
+            console.error("[pinSupabaseProjectRef] patchMultiExecResult failed:", err);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return result;
+          }
         },
       };
       continue;
@@ -327,8 +342,14 @@ function pinSupabaseProjectRef(
         execute: async (input: unknown, options) => {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           const result = await originalExecute(input, options);
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return scrubSearchToolsResult(result, pinnedRef);
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return scrubSearchToolsResult(result, pinnedRef);
+          } catch (err) {
+            console.error("[pinSupabaseProjectRef] scrubSearchToolsResult failed:", err);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return result;
+          }
         },
       };
       continue;
@@ -467,13 +488,35 @@ export async function prepareAgentRun(
 
   const customTools = createCustomTools(instanceId, userTimezone);
 
-  const pinnedComposioTools = pinSupabaseProjectRef(
+  const supabasePinned = pinSupabaseProjectRef(
     composioTools,
     instance.supabaseProjectRef,
   );
 
+  const githubPinned = pinGithubRepos(
+    supabasePinned,
+    instance.pinnedGithubRepos,
+    instance.allowDestructiveGithubActions,
+    ({ toolSlug, attemptedRepo, reason }) => {
+      // Fire-and-forget telemetry write. Never block the agent on a DB
+      // hiccup — wrap any throw in a catch and log it.
+      void db.githubBlockedAction
+        .create({
+          data: {
+            instanceId: instance.id,
+            toolSlug,
+            attemptedRepo: attemptedRepo ?? null,
+            reason,
+          },
+        })
+        .catch((err: unknown) => {
+          console.error("[setup] githubBlockedAction insert failed:", err);
+        });
+    },
+  );
+
   const allTools: ToolSet = sanitizeToolResults({
-    ...pinnedComposioTools,
+    ...githubPinned,
     ...customTools,
   });
 
