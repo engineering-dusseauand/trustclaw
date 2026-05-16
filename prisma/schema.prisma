@@ -117,10 +117,10 @@ model ComposioClawInstance {
   // Capped at 20 entries at the tRPC layer.
   pinnedGithubRepos String[] @default([])
 
-  // Destructive GitHub actions (DELETE_REPO, MERGE_PULL_REQUEST, force-push,
-  // etc.) are blocked by default even within pinned repos. Toggle this on
-  // to allow the agent to invoke them.
-  allowDestructiveGithubActions Boolean @default(false)
+  /// Effective list of Composio tool slugs the agent is allowed to call,
+  /// per-instance. Seeded with curated per-toolkit defaults on first agent
+  /// run; mutated by the admin UI. Compared case-insensitively.
+  allowedToolSlugs String[] @default([])
 
   // Agent identity, stored as text
   soulPrompt      String?
