@@ -37,7 +37,8 @@ export type GithubBlockReasonValue =
   | "org_level_blocked"
   | "search_blocked"
   | "url_arg_refused"
-  | "no_pins_configured";
+  | "no_pins_configured"
+  | "auth_user_enumeration_blocked";
 
 export type RecordGithubBlock = (params: {
   toolSlug: string;
@@ -93,14 +94,50 @@ const GITHUB_FOREIGN_LISTING_TOOLS = new Set([
 ]);
 
 /**
- * Tools that return the user's own repo list — allowed, but the result
- * is post-filtered to only include pinned repos. The agent can still
- * find pinned repos by name but never sees anything outside the pin
- * set.
+ * Tools that enumerate the authenticated user's own repos. Blocked
+ * entirely (not post-filtered) because Composio truncates large
+ * responses to a `data_preview` and stashes the full payload in the
+ * COMPOSIO_REMOTE_WORKBENCH session — the workbench can then load and
+ * count the full unfiltered list via Python, bypassing any response
+ * filtering we'd apply at this layer. Blocking the call means Composio
+ * never stores the data and the workbench-bypass channel stays empty.
+ *
+ * The block message includes the pinned list so the agent can answer
+ * "what repos do you have?" directly from the error response without
+ * needing another tool call.
+ *
+ * Workbench-bypass note: an agent could still write raw Python in
+ * COMPOSIO_REMOTE_WORKBENCH that hits GitHub's REST API directly with
+ * the connected token. Closing that requires either blocking the
+ * workbench entirely (kills a generally-useful tool) or inspecting
+ * Python code for GitHub API calls (brittle). Documented as a known
+ * limitation; not addressed here.
  */
-const GITHUB_LISTING_TOOLS_TO_FILTER = new Set([
+const GITHUB_AUTH_USER_LISTING_TOOLS = new Set([
   "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER",
+  "GITHUB_LIST_REPOSITORIES_STARRED_BY_THE_AUTHENTICATED_USER",
+  "GITHUB_LIST_REPOSITORIES_WATCHED_BY_THE_AUTHENTICATED_USER",
 ]);
+
+/**
+ * Kept for future use — currently empty. The post-filter machinery
+ * (filterReposInResult, repoFilterIndices) still exists and works for
+ * any tool we DO want to allow + filter. Right now everything that
+ * could enumerate goes through GITHUB_AUTH_USER_LISTING_TOOLS instead
+ * because of the workbench bypass.
+ */
+const GITHUB_LISTING_TOOLS_TO_FILTER = new Set<string>([]);
+
+function authUserListingBlockedError(pinnedRepos: string[]): string {
+  if (pinnedRepos.length === 0) return NO_PINS_ERROR;
+  const list = pinnedRepos.join(", ");
+  return (
+    `GitHub repo enumeration is blocked. The agent can only operate on ` +
+    `these ${pinnedRepos.length} pinned repo${pinnedRepos.length === 1 ? "" : "s"}: ` +
+    `${list}. Use GITHUB_GET_REPO with structured {owner, repo} args for ` +
+    `details on a specific one.`
+  );
+}
 
 /**
  * Destructive slug detection. Conservative — when in doubt, deny.
@@ -296,7 +333,20 @@ export function rewriteGithubBatch(
       return rec;
     }
 
-    // Listing the user's own repos → allow but mark for post-filter.
+    // Authenticated-user enumeration is blocked entirely. Composio's
+    // workbench can otherwise bypass a response-level filter; see the
+    // comment on GITHUB_AUTH_USER_LISTING_TOOLS for the full rationale.
+    // The block message includes the pinned list so the agent can answer
+    // questions like "what repos do you have?" from the error itself.
+    if (GITHUB_AUTH_USER_LISTING_TOOLS.has(upper)) {
+      block(
+        "auth_user_enumeration_blocked",
+        authUserListingBlockedError(pinnedRepos),
+      );
+      return rec;
+    }
+
+    // Listing tools to allow + post-filter (currently empty).
     if (GITHUB_LISTING_TOOLS_TO_FILTER.has(upper)) {
       repoFilterIndices.add(idx);
       return rec;
@@ -466,6 +516,12 @@ const GITHUB_HIDDEN_SLUGS = new Set<string>([
   "GITHUB_LIST_REPOSITORIES_OF_AN_ORG",
   "GITHUB_LIST_ORGANIZATION_REPOSITORIES",
   "GITHUB_LIST_PUBLIC_REPOSITORIES",
+  // Authenticated-user enumeration — blocked at MULTI_EXECUTE_TOOL because
+  // of the workbench-bypass risk; also hidden here so the agent doesn't
+  // discover them via SEARCH_TOOLS and try to call them in the first place.
+  "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER",
+  "GITHUB_LIST_REPOSITORIES_STARRED_BY_THE_AUTHENTICATED_USER",
+  "GITHUB_LIST_REPOSITORIES_WATCHED_BY_THE_AUTHENTICATED_USER",
 ]);
 
 /**

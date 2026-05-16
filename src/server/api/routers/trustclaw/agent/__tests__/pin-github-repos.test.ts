@@ -304,17 +304,54 @@ describe("rewriteGithubBatch", () => {
     expect(blockedIndices.size).toBe(1);
   });
 
-  it("allows LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER and marks for post-filter", () => {
+  it("blocks LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER entirely", () => {
+    const record = vi.fn();
     const input = single("GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER", {});
     const { blockedIndices, repoFilterIndices } = rewriteGithubBatch(
       input,
       pins,
       false,
-      noopRecord,
+      record,
     );
-    expect(blockedIndices.size).toBe(0);
-    expect(repoFilterIndices.size).toBe(1);
-    expect(repoFilterIndices.has(0)).toBe(true);
+    expect(blockedIndices.size).toBe(1);
+    expect(repoFilterIndices.size).toBe(0);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "auth_user_enumeration_blocked",
+        toolSlug: "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER",
+      }),
+    );
+  });
+
+  it("block message for auth-user listing includes every pinned repo by name", () => {
+    const input = single("GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER", {});
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, noopRecord);
+    const message = blockedIndices.get(0);
+    expect(message).toBeDefined();
+    for (const pinned of pins) {
+      expect(message).toContain(pinned);
+    }
+    // Mentions count and steers the agent at the structured alternative.
+    expect(message).toContain(String(pins.length));
+    expect(message).toContain("GITHUB_GET_REPO");
+  });
+
+  it("blocks LIST_REPOSITORIES_STARRED_BY_THE_AUTHENTICATED_USER", () => {
+    const input = single(
+      "GITHUB_LIST_REPOSITORIES_STARRED_BY_THE_AUTHENTICATED_USER",
+      {},
+    );
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, noopRecord);
+    expect(blockedIndices.size).toBe(1);
+  });
+
+  it("blocks LIST_REPOSITORIES_WATCHED_BY_THE_AUTHENTICATED_USER", () => {
+    const input = single(
+      "GITHUB_LIST_REPOSITORIES_WATCHED_BY_THE_AUTHENTICATED_USER",
+      {},
+    );
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, noopRecord);
+    expect(blockedIndices.size).toBe(1);
   });
 });
 

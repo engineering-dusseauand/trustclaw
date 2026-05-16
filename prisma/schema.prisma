@@ -159,6 +159,7 @@ enum GithubBlockReason {
   search_blocked
   url_arg_refused
   no_pins_configured
+  auth_user_enumeration_blocked
 }
 
 model GithubBlockedAction {
