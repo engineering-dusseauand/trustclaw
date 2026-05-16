@@ -114,9 +114,17 @@ const GITHUB_FOREIGN_LISTING_TOOLS = new Set([
  * limitation; not addressed here.
  */
 const GITHUB_AUTH_USER_LISTING_TOOLS = new Set([
+  // Direct repo enumeration.
   "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER",
   "GITHUB_LIST_REPOSITORIES_STARRED_BY_THE_AUTHENTICATED_USER",
   "GITHUB_LIST_REPOSITORIES_WATCHED_BY_THE_AUTHENTICATED_USER",
+  // Indirect — leak repo counts / org membership / identity that the
+  // agent uses to confabulate or pivot to another enumeration path.
+  // GET_THE_AUTHENTICATED_USER returns owned_private_repos /
+  // total_private_repos / public_repos; LIST_ORGANIZATIONS reveals
+  // which orgs the agent could pivot through to find more repos.
+  "GITHUB_GET_THE_AUTHENTICATED_USER",
+  "GITHUB_LIST_ORGANIZATIONS_FOR_THE_AUTHENTICATED_USER",
 ]);
 
 /**
@@ -522,6 +530,8 @@ const GITHUB_HIDDEN_SLUGS = new Set<string>([
   "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER",
   "GITHUB_LIST_REPOSITORIES_STARRED_BY_THE_AUTHENTICATED_USER",
   "GITHUB_LIST_REPOSITORIES_WATCHED_BY_THE_AUTHENTICATED_USER",
+  "GITHUB_GET_THE_AUTHENTICATED_USER",
+  "GITHUB_LIST_ORGANIZATIONS_FOR_THE_AUTHENTICATED_USER",
 ]);
 
 /**
@@ -578,12 +588,41 @@ export function scrubSearchToolsResultForGithub(
           );
         }
       }
+      // Drop plan steps and pitfalls that name a hidden slug — Composio's
+      // SEARCH_TOOLS embeds full slug names in the human-readable plan
+      // text, which the agent reads and uses to bypass the schema-level
+      // hiding. Stripping the text closes that path.
+      for (const key of ["recommended_plan_steps", "known_pitfalls"]) {
+        const arr = rec[key];
+        if (Array.isArray(arr)) {
+          rec[key] = arr.filter(
+            (s) =>
+              typeof s !== "string" ||
+              !mentionsHiddenGithubSlug(s, GITHUB_HIDDEN_SLUGS),
+          );
+        }
+      }
       return rec;
     });
   }
 
   out.data = inner;
   return out;
+}
+
+/**
+ * Returns true when the given free-text string mentions any of the
+ * hidden GitHub tool slugs. Case-insensitive whole-token match — won't
+ * fire on substrings that happen to overlap a tool name.
+ */
+function mentionsHiddenGithubSlug(text: string, hidden: Set<string>): boolean {
+  // Slugs are uppercase A-Z0-9_; isolate uppercase tokens and check each.
+  const tokens = text.match(/[A-Z][A-Z0-9_]+/g);
+  if (!tokens) return false;
+  for (const token of tokens) {
+    if (hidden.has(token)) return true;
+  }
+  return false;
 }
 
 /**

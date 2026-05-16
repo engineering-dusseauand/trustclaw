@@ -353,6 +353,25 @@ describe("rewriteGithubBatch", () => {
     const { blockedIndices } = rewriteGithubBatch(input, pins, false, noopRecord);
     expect(blockedIndices.size).toBe(1);
   });
+
+  it("blocks GITHUB_GET_THE_AUTHENTICATED_USER (leaks repo counts)", () => {
+    const record = vi.fn();
+    const input = single("GITHUB_GET_THE_AUTHENTICATED_USER", {});
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, record);
+    expect(blockedIndices.size).toBe(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "auth_user_enumeration_blocked",
+        toolSlug: "GITHUB_GET_THE_AUTHENTICATED_USER",
+      }),
+    );
+  });
+
+  it("blocks GITHUB_LIST_ORGANIZATIONS_FOR_THE_AUTHENTICATED_USER (leaks org membership)", () => {
+    const input = single("GITHUB_LIST_ORGANIZATIONS_FOR_THE_AUTHENTICATED_USER", {});
+    const { blockedIndices } = rewriteGithubBatch(input, pins, false, noopRecord);
+    expect(blockedIndices.size).toBe(1);
+  });
 });
 
 describe("filterReposInResult", () => {
@@ -599,5 +618,49 @@ describe("scrubSearchToolsResultForGithub", () => {
     };
     expect(out.data.results[0]!.primary_tool_slugs).toEqual(["GITHUB_GET_A_REPOSITORY"]);
     expect(out.data.results[0]!.related_tool_slugs).toEqual([]);
+  });
+
+  it("strips recommended_plan_steps that name a hidden tool", () => {
+    const result = {
+      data: {
+        results: [
+          {
+            recommended_plan_steps: [
+              "List accessible repositories using GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER (paginate, aggregate)",
+              "Validate the connected identity using GITHUB_GET_THE_AUTHENTICATED_USER first",
+              "Get a specific repository with GITHUB_GET_A_REPOSITORY for details",
+            ],
+          },
+        ],
+      },
+    };
+    const out = scrubSearchToolsResultForGithub(result, pins) as {
+      data: { results: Array<{ recommended_plan_steps: string[] }> };
+    };
+    // Only the GITHUB_GET_A_REPOSITORY step survives.
+    expect(out.data.results[0]!.recommended_plan_steps).toHaveLength(1);
+    expect(out.data.results[0]!.recommended_plan_steps[0]).toContain("GITHUB_GET_A_REPOSITORY");
+  });
+
+  it("strips known_pitfalls that name a hidden tool", () => {
+    const result = {
+      data: {
+        results: [
+          {
+            known_pitfalls: [
+              "[GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER] Some parameter combinations trigger 422",
+              "[GITHUB_GET_A_REPOSITORY] Returns 404 for missing repos",
+              "Free-form pitfall with no tool names — should pass through",
+            ],
+          },
+        ],
+      },
+    };
+    const out = scrubSearchToolsResultForGithub(result, pins) as {
+      data: { results: Array<{ known_pitfalls: string[] }> };
+    };
+    expect(out.data.results[0]!.known_pitfalls).toHaveLength(2);
+    expect(out.data.results[0]!.known_pitfalls[0]).toContain("GITHUB_GET_A_REPOSITORY");
+    expect(out.data.results[0]!.known_pitfalls[1]).toContain("Free-form pitfall");
   });
 });
