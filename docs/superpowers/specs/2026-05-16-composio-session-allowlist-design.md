@@ -167,7 +167,7 @@ The implementation PR includes the verified slug-by-slug list. Reviewing that PR
 
 ## Composio session config rewrite
 
-The single biggest delta is at `src/server/api/routers/trustclaw/agent/setup.ts:142-148`.
+The single biggest delta is at `src/server/api/routers/trustclaw/agent/setup.ts:481-489` (the `composio.create(instance.userId, ...)` call).
 
 ```ts
 // Build per-toolkit allow config from the instance's allowedToolSlugs.
@@ -212,7 +212,7 @@ export function buildAllowlistConfig(
 
 ### Lazy seeding
 
-Inside `prepareAgentRun`, before the session config:
+Inside `prepareAgentRun`, right after the instance is loaded (so the seeded value is in scope for the rest of the function), and before the `composio.create()` session config call:
 
 ```ts
 if (instance.allowedToolSlugs.length === 0) {
@@ -250,7 +250,7 @@ Two concurrent agent runs that both find `allowedToolSlugs = []` will both write
 2. If `${owner}/${repo}` is not in `pinnedGithubRepos` (case-insensitive), rename slug to `__BLOCKED_*` and synthesize an error response pointing the agent at the pinned set.
 3. Otherwise pass through unchanged.
 
-The destructive-flag check is removed (destructive slugs are simply not in defaults; user opts in via allowlist).
+The destructive-flag check is removed (destructive slugs are simply not in defaults; user opts in via allowlist). The `pinGithubRepos` function signature loses its `allowDestructive` parameter; its single call site in `setup.ts` (currently passing `instance.allowDestructiveGithubActions`) is updated accordingly.
 
 `pinSupabaseProjectRef` is unchanged.
 
@@ -439,6 +439,8 @@ Net test count: roughly **−5** (more deletions than additions). Suite stays su
 3. **`RUN_SQL_QUERY` (Supabase) in default?** Currently out. Composio may have read-only / read-write variants; verify and choose.
 4. **`getToolkitTools` caching** — Composio's catalog is stable enough not to need persistent cache, but TanStack Query's request-time cache should kick in naturally via the tRPC client.
 5. **Composio "tool not found" error UX** — defer the response post-processor to v1.1 unless first-run testing shows the agent gets confused.
+6. **`composio.tools.list()` response fields** — confirm at implementation that the SDK returns `label` and `description` fields used by `getToolkitTools`. Some Composio SDK versions only return `slug` and a separate `description`; we may need a thin adapter.
+7. **`KNOWN_MULTI_WORD_TOOLKITS` extensibility** — `build-config.ts` should include a code comment noting this list needs updating when toolkits like `MICROSOFT_TEAMS` or `ZOOM_VIDEO` are added. Until then they'd misparse to `microsoft` / `zoom`. Not a v1 concern given the v1 toolkit set.
 
 ## Migration plan
 
