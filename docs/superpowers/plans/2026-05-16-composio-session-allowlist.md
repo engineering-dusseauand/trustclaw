@@ -70,6 +70,8 @@ Standard commands:
 **Files:**
 - Modify: `prisma/schema.prisma`
 
+**Important constraint**: do **not** touch the `enum GithubBlockReason` block. The deprecated enum members (`destructive_blocked`, `org_level_blocked`, `search_blocked`, `url_arg_refused`, `no_pins_configured`, `auth_user_enumeration_blocked`) stay in the schema for backward compatibility with existing rows in `composio_claw_github_block`. New code only emits `not_pinned`, but rows persisted before this PR keep their original reason values.
+
 - [ ] **Step 1: Add `allowedToolSlugs`, drop `allowDestructiveGithubActions`**
 
 Open `prisma/schema.prisma`. Inside `model ComposioClawInstance`:
@@ -630,6 +632,8 @@ export * as googleCalendarAllowlist from "./google_calendar";
 
 This procedure merges curated defaults with Composio's live catalog and returns the full picker-dialog data.
 
+**Note on toolkit-prefix matching**: the surviving Task 11/12 procedures also need to filter `allowedToolSlugs` by toolkit. Use the same `KNOWN_MULTI_WORD_TOOLKITS` logic as `buildAllowlistConfig` — copy/import that helper rather than re-implementing, to avoid drift. A slug like `GOOGLE_CALENDAR_LIST_EVENTS` belongs to toolkit `google_calendar`, not `google`.
+
 - [ ] **Step 1: Write the schema**
 
 `getToolkitTools.schema.ts`:
@@ -862,6 +866,8 @@ Find the `pinGithubRepos(composioTools, instance.pinnedGithubRepos, instance.all
 
 Change to: `pinGithubRepos(composioTools, instance.pinnedGithubRepos, ...)`. (The argument removal is wired in Task 14.)
 
+The `recordBlock` callback wiring in `setup.ts` stays unchanged. It already accepts `reason: GithubBlockReasonValue` and writes to `composio_claw_github_block`. After Task 14 trims the value type to just `"not_pinned"`, the callback receives only that reason but the Prisma enum is wider (per Task 1 constraint), so writes continue to typecheck and persist correctly. Do not delete the telemetry wiring.
+
 - [ ] **Step 5: Verify typecheck**
 
 ```bash
@@ -951,7 +957,7 @@ Remove the SEARCH_TOOLS branch in the function entirely. Remove destructive-gate
 export type GithubBlockReasonValue = "not_pinned";
 ```
 
-(All other reasons no longer emitted from this file.)
+(All other reasons no longer emitted from this file. The Prisma enum keeps the wider set — see Task 1 constraint — so writes to the existing `composio_claw_github_block` table continue to work and historical rows remain readable.)
 
 - [ ] **Step 4: Verify typecheck**
 
@@ -1381,14 +1387,20 @@ Start dev server (`pnpm dev`), log in, visit `/dashboard/toolkits`. The Supabase
 
 ## Task 18: Drop other references to `allowDestructiveGithubActions`
 
-**Files:**
-- Search for and modify any UI / settings code still referencing the removed field.
+**Files (concrete pre-list — verify with grep; this may not be exhaustive):**
+- `src/server/api/routers/toolkits/setAllowDestructiveGithubActions.ts` — entire tRPC procedure file, delete
+- `src/server/api/routers/toolkits/setAllowDestructiveGithubActions.schema.ts` — delete if exists
+- `src/server/api/routers/toolkits/index.ts` — unregister the procedure from `toolkitsRouter`
+- `src/server/api/routers/toolkits/getGithubPinnedRepos.ts` — remove the field from the `select`/return shape if present
+- `src/app/(authenticated)/dashboard/toolkits/_components/` — search all `.tsx` files for any toggle UI tied to the field
 
-- [ ] **Step 1: Find references**
+- [ ] **Step 1: Find any remaining references**
 
 ```bash
 grep -rn "allowDestructiveGithubActions" src/ scripts/ --include="*.ts" --include="*.tsx"
 ```
+
+Cross-check against the pre-list above. Anything not in the pre-list is new since the plan was written and needs handling.
 
 - [ ] **Step 2: Remove each reference**
 
@@ -1459,11 +1471,17 @@ Mobile viewport (Chrome DevTools): dialog renders as Sheet, content scrolls insi
 
 In the chat, ask: "What github repos do you have access to?"
 
-Expected: agent uses only allowlisted GitHub tools. If the agent tries `LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER`, Composio rejects (tool not in allowlist). The agent should answer from its understanding of pinned repos (or honestly say it cannot enumerate).
+Expected behavior:
+- Composio's `SEARCH_TOOLS` does not surface the blocked enumeration slugs (they aren't in the session's `tools` config), so the agent shouldn't even discover them.
+- The agent may still attempt blocked slugs by name (e.g. `LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER` from its training data) via `MULTI_EXECUTE_TOOL`. Composio rejects the call server-side because the slug isn't in `tools.github.enable`. The agent receives a "tool not found" or similar error response from Composio.
+- The agent should answer from its understanding of pinned repos (or honestly say it cannot enumerate).
 
 If the agent answers correctly: ✅ architecture works as intended.
 
-If the agent enumerates anyway: capture the tool call from terminal pane → debug which path leaked.
+If the agent enumerates anyway:
+1. Capture the tool call from terminal pane.
+2. Verify the slug actually called.
+3. Either (a) the slug was inadvertently in the allowlist (curation bug) — remove it; or (b) Composio's allowlist enforcement has a hole we didn't know about — file an issue.
 
 - [ ] **Step 6: Commit any final smoke-test-driven fixes**
 
