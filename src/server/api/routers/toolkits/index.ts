@@ -8,6 +8,7 @@ import { listGithubRepos } from "./listGithubRepos";
 import { getGithubPinnedRepos } from "./getGithubPinnedRepos";
 import { setGithubPinnedRepos } from "./setGithubPinnedRepos";
 import { getRecentGithubBlocks } from "./getRecentGithubBlocks";
+import { getToolkitTools } from "./getToolkitTools";
 
 export const toolkitsRouter = router({
   getToolkits,
@@ -19,4 +20,5 @@ export const toolkitsRouter = router({
   getGithubPinnedRepos,
   setGithubPinnedRepos,
   getRecentGithubBlocks,
+  getToolkitTools,
 });
