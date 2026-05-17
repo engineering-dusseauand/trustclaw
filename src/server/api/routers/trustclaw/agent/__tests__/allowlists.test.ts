@@ -5,6 +5,7 @@ import * as gmail from "../allowlists/gmail";
 import * as slack from "../allowlists/slack";
 import * as notion from "../allowlists/notion";
 import * as googlecalendar from "../allowlists/googlecalendar";
+import { DEFAULT_TOOL_ALLOWLIST } from "../allowlists";
 
 interface AllowlistModule {
   DEFAULT_SLUGS: readonly string[];
@@ -24,13 +25,7 @@ const TOOLKITS: ReadonlyArray<{
   { name: "googlecalendar", prefix: "GOOGLECALENDAR_", mod: googlecalendar },
 ];
 
-/**
- * Patterns that should never appear in any toolkit's default allowlist.
- * Anything matching here is opt-in territory: destructive ops, cross-scope
- * enumeration, or top-level resource creation outside the pinned set.
- */
 const FORBIDDEN_PATTERNS = [
-  // Destructive
   /^[A-Z]+_DELETE_/,
   /_DELETE_(REPOSITORY|PROJECT|RELEASE|EVENT|BLOCK|MESSAGE|DRAFT|FUNCTION|BUCKET|CALENDAR)/,
   /_REMOVE_A_REPOSITORY/,
@@ -38,16 +33,11 @@ const FORBIDDEN_PATTERNS = [
   /_MOVE_TO_TRASH/,
   /_ARCHIVE_/,
   /_CLEAR_CALENDAR/,
-  // Cross-scope enumeration
   /LIST_REPOSITORIES_FOR_(THE_AUTHENTICATED_USER|A_USER)/,
   /LIST_PUBLIC_/,
   /GET_THE_AUTHENTICATED_USER$/,
   /LIST_ORGANIZATIONS_FOR/,
-  // Search at toolkit-wide scope (not in defaults; SEARCH_ISSUES etc.
-  // can be opted-in but are off by default)
   /^GITHUB_SEARCH_/,
-  // Top-level resource creation that creates new sandboxes outside the
-  // user's pin set
   /SUPABASE_CREATE_A_PROJECT/,
   /SUPABASE_CREATES_A_NEW_/,
 ];
@@ -96,7 +86,6 @@ describe("toolkit default allowlists", () => {
   }
 });
 
-// Spec Open Question #2: MERGE_PULL_REQUEST is out of defaults; opt-in.
 describe("github allowlist specifics", () => {
   it("excludes MERGE_PULL_REQUEST (spec Open Question #2)", () => {
     expect(github.DEFAULT_SLUGS).not.toContain("GITHUB_MERGE_A_PULL_REQUEST");
@@ -104,7 +93,6 @@ describe("github allowlist specifics", () => {
   });
 });
 
-// Spec Open Question #3: RUN_SQL_QUERY (Supabase write SQL) is out of defaults.
 describe("supabase allowlist specifics", () => {
   it("excludes write SQL execution (spec Open Question #3)", () => {
     expect(supabase.DEFAULT_SLUGS).not.toContain("SUPABASE_BETA_RUN_SQL_QUERY");
@@ -114,5 +102,44 @@ describe("supabase allowlist specifics", () => {
   it("excludes cross-project enumeration", () => {
     expect(supabase.DEFAULT_SLUGS).not.toContain("SUPABASE_LIST_ALL_PROJECTS");
     expect(supabase.DEFAULT_SLUGS).not.toContain("SUPABASE_LIST_ALL_ORGANIZATIONS");
+  });
+});
+
+describe("DEFAULT_TOOL_ALLOWLIST aggregator", () => {
+  it("includes all 6 v1 toolkits keyed by Composio's actual toolkit slug", () => {
+    expect(Object.keys(DEFAULT_TOOL_ALLOWLIST).sort()).toEqual([
+      "github",
+      "gmail",
+      "googlecalendar",
+      "notion",
+      "slack",
+      "supabase",
+    ]);
+  });
+
+  it("every entry is a non-empty readonly array", () => {
+    for (const [toolkit, slugs] of Object.entries(DEFAULT_TOOL_ALLOWLIST)) {
+      expect(slugs.length, `${toolkit} should not be empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it("no slug appears in more than one toolkit's defaults", () => {
+    const seen = new Map<string, string>();
+    for (const [toolkit, slugs] of Object.entries(DEFAULT_TOOL_ALLOWLIST)) {
+      for (const slug of slugs) {
+        const prev = seen.get(slug);
+        expect(prev, `${slug} duplicated across ${prev} and ${toolkit}`).toBeUndefined();
+        seen.set(slug, toolkit);
+      }
+    }
+  });
+
+  it("aggregator entries match each toolkit's DEFAULT_SLUGS export", () => {
+    expect(DEFAULT_TOOL_ALLOWLIST.github).toBe(github.DEFAULT_SLUGS);
+    expect(DEFAULT_TOOL_ALLOWLIST.supabase).toBe(supabase.DEFAULT_SLUGS);
+    expect(DEFAULT_TOOL_ALLOWLIST.gmail).toBe(gmail.DEFAULT_SLUGS);
+    expect(DEFAULT_TOOL_ALLOWLIST.slack).toBe(slack.DEFAULT_SLUGS);
+    expect(DEFAULT_TOOL_ALLOWLIST.notion).toBe(notion.DEFAULT_SLUGS);
+    expect(DEFAULT_TOOL_ALLOWLIST.googlecalendar).toBe(googlecalendar.DEFAULT_SLUGS);
   });
 });
