@@ -552,8 +552,28 @@ export async function prepareAgentRun(
   }
   const toolkitsToEnable = Object.keys(toolsConfig);
 
+  /**
+   * Composio's catalog endpoint lists slugs that ToolRouter then rejects
+   * at session-creation time when the user's OAuth grant lacks the
+   * scopes the slug requires (e.g. Supabase `Edge Functions:Read`).
+   * The error is fatal at the API level — a single invalid slug 400s
+   * the entire session config — so we parse the rejected list out of
+   * the error, strip it from both `toolsConfig` and `allowedToolSlugs`
+   * (DB self-heal so subsequent chats don't hit this), and retry once.
+   */
+  function parseInvalidSlugsFromError(err: unknown): string[] {
+    if (!(err instanceof Error)) return [];
+    const match = err.message.match(/Invalid tool slugs in config\.tools:\s*([^.]+)\./i);
+    const captured = match?.[1];
+    if (!captured) return [];
+    return captured
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => /^[A-Z][A-Z0-9_]+$/.test(s));
+  }
+
   const composio = createComposioClient();
-  const session = await composio.create(instance.userId, {
+  const sessionPayload = {
     manageConnections: {
       waitForConnections: true,
     },
@@ -569,7 +589,64 @@ export async function prepareAgentRun(
       enable: true,
       enableProxyExecution: false,
     },
-  });
+  };
+
+  let session: Awaited<ReturnType<typeof composio.create>>;
+  try {
+    session = await composio.create(instance.userId, sessionPayload);
+  } catch (err) {
+    const invalidSlugs = parseInvalidSlugsFromError(err);
+    if (invalidSlugs.length === 0) throw err;
+
+    console.warn(
+      `[prepareAgentRun] Composio rejected ${invalidSlugs.length} slug(s): ${invalidSlugs.join(", ")}. Stripping and retrying.`,
+    );
+
+    // Strip invalid slugs from both the in-memory session config and
+    // the user's persisted allowlist so the next chat skips them.
+    const invalidSet = new Set(invalidSlugs);
+    for (const [toolkit, slice] of Object.entries(sessionPayload.tools ?? {})) {
+      const cleaned = slice.enable.filter((s) => !invalidSet.has(s));
+      if (cleaned.length === 0) {
+        delete (sessionPayload.tools as Record<string, unknown>)[toolkit];
+      } else {
+        (sessionPayload.tools as Record<string, { enable: string[] }>)[toolkit] = { enable: cleaned };
+      }
+    }
+    const remainingToolkits = Object.keys(sessionPayload.tools ?? {});
+    if (remainingToolkits.length === 0) {
+      // No toolkits left after stripping — drop the toolkits/tools keys
+      // entirely so ToolRouter doesn't try to validate an empty config.
+      delete (sessionPayload as { toolkits?: unknown }).toolkits;
+      delete (sessionPayload as { tools?: unknown }).tools;
+    } else {
+      (sessionPayload as { toolkits: { enable: string[] } }).toolkits = {
+        enable: remainingToolkits,
+      };
+    }
+
+    // Self-heal: write the cleaned list back to the DB. Best-effort —
+    // if this fails the next chat will just hit the same error and
+    // retry the same way.
+    try {
+      const nextAllowed = instance.allowedToolSlugs.filter(
+        (s) => !invalidSet.has(s),
+      );
+      await db.composioClawInstance.update({
+        where: { id: instance.id },
+        data: { allowedToolSlugs: nextAllowed },
+      });
+      instance.allowedToolSlugs = nextAllowed;
+    } catch (writeErr) {
+      console.error(
+        "[prepareAgentRun] DB self-heal of allowedToolSlugs failed:",
+        writeErr,
+      );
+    }
+
+    session = await composio.create(instance.userId, sessionPayload);
+  }
+
   const composioTools = await session.tools();
 
   const customTools = createCustomTools(instanceId, userTimezone);
