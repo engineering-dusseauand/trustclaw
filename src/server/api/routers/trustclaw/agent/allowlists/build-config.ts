@@ -1,11 +1,15 @@
 /**
- * Multi-word toolkit prefixes that must be detected before the
- * single-word `split("_")[0]` heuristic. Update when a new toolkit
- * with a compound name (e.g. MICROSOFT_TEAMS, ZOOM_VIDEO) is added —
- * otherwise `MICROSOFT_TEAMS_SEND_MESSAGE` would parse as toolkit
- * `microsoft` and Composio's session config would silently drop it.
+ * Multi-word toolkit prefixes detected before the default
+ * `split("_")[0]` heuristic. **Composio's actual catalog uses
+ * single-word toolkit slugs even for compound names** — Google
+ * Calendar tools are `GOOGLECALENDAR_*` not `GOOGLE_CALENDAR_*`,
+ * Google Drive is `GOOGLEDRIVE_*`. So this list is empty by default.
+ * Add an entry only if a future toolkit ships with an underscore in
+ * its Composio slug name; verify against
+ * https://backend.composio.dev/api/v3/tools?toolkit_slug=<name>
+ * before adding.
  */
-const KNOWN_MULTI_WORD_TOOLKITS = ["GOOGLE_CALENDAR", "GOOGLE_DRIVE"];
+const KNOWN_MULTI_WORD_TOOLKITS: readonly string[] = [];
 
 /**
  * Groups a flat list of Composio tool slugs by toolkit, producing the

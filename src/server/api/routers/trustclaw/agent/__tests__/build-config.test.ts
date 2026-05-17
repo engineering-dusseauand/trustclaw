@@ -18,14 +18,17 @@ describe("buildAllowlistConfig", () => {
     });
   });
 
-  it("handles multi-word toolkits via KNOWN_MULTI_WORD_TOOLKITS", () => {
+  it("groups googlecalendar slugs as a single toolkit (Composio uses single-word slugs)", () => {
+    // Composio's actual GoogleCalendar slugs are GOOGLECALENDAR_*, not
+    // GOOGLE_CALENDAR_*, so the default split("_")[0] heuristic groups
+    // them correctly without needing KNOWN_MULTI_WORD_TOOLKITS.
     const out = buildAllowlistConfig([
-      "GOOGLE_CALENDAR_LIST_EVENTS",
-      "GOOGLE_CALENDAR_CREATE_EVENT",
+      "GOOGLECALENDAR_EVENTS_LIST",
+      "GOOGLECALENDAR_CREATE_EVENT",
     ]);
     expect(out).toEqual({
-      google_calendar: {
-        enable: ["GOOGLE_CALENDAR_LIST_EVENTS", "GOOGLE_CALENDAR_CREATE_EVENT"],
+      googlecalendar: {
+        enable: ["GOOGLECALENDAR_EVENTS_LIST", "GOOGLECALENDAR_CREATE_EVENT"],
       },
     });
   });
@@ -43,11 +46,11 @@ describe("buildAllowlistConfig", () => {
     });
   });
 
-  it("does not collapse google_drive into google", () => {
+  it("keeps googlecalendar and googledrive as distinct toolkits (Composio's actual slug shape)", () => {
     const out = buildAllowlistConfig([
-      "GOOGLE_CALENDAR_LIST_EVENTS",
-      "GOOGLE_DRIVE_LIST_FILES",
+      "GOOGLECALENDAR_EVENTS_LIST",
+      "GOOGLEDRIVE_LIST_FILES",
     ]);
-    expect(Object.keys(out).sort()).toEqual(["google_calendar", "google_drive"]);
+    expect(Object.keys(out).sort()).toEqual(["googlecalendar", "googledrive"]);
   });
 });
