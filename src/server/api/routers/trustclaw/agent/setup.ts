@@ -25,6 +25,10 @@ import {
 import { stripToolResultEchoes } from "./strip-tool-echoes";
 import { clearStreamingMessage } from "~/server/clients/redis";
 import { pinGithubRepos } from "./pin-github-repos";
+import {
+  DEFAULT_TOOL_ALLOWLIST,
+  buildAllowlistConfig,
+} from "./allowlists";
 import type { ReconstructedMessage } from "./types";
 
 type MessageSource = "web" | "telegram" | "cron";
@@ -422,6 +426,39 @@ export async function prepareAgentRun(
     throw new Error("Instance not found");
   }
 
+  // Lazy-seed allowedToolSlugs from curated per-toolkit defaults the
+  // first time the agent runs after instance creation. Existing users
+  // upgrading from pre-allowlist TrustClaw also get seeded here. Empty
+  // → connected toolkits intersected with DEFAULT_TOOL_ALLOWLIST.
+  if (instance.allowedToolSlugs.length === 0) {
+    try {
+      const seedComposio = createComposioClient();
+      const connected = await seedComposio.connectedAccounts.list({
+        userIds: [instance.userId],
+      });
+      const seed: string[] = [];
+      for (const acc of connected.items ?? []) {
+        const toolkit = acc.toolkit?.slug?.toLowerCase();
+        if (!toolkit) continue;
+        const defaults = DEFAULT_TOOL_ALLOWLIST[toolkit];
+        if (defaults) seed.push(...defaults);
+      }
+      if (seed.length > 0) {
+        await db.composioClawInstance.update({
+          where: { id: instance.id },
+          data: { allowedToolSlugs: seed },
+        });
+        instance.allowedToolSlugs = seed;
+      }
+    } catch (err) {
+      // Best-effort. If seeding fails the agent runs with an empty
+      // allowlist for this turn — agent gets no Composio tools but
+      // custom tools (memory, schedule) still work. User can recover
+      // by configuring tools in /dashboard/toolkits.
+      console.error("[prepareAgentRun] lazy-seed allowedToolSlugs failed:", err);
+    }
+  }
+
   const user = await db.user.findUnique({
     where: { id: instance.userId },
     select: { timezone: true },
@@ -478,10 +515,31 @@ export async function prepareAgentRun(
     },
   });
 
+  // Build the Composio session config from the per-instance allowlist.
+  // Server-side enforcement: tools outside this set do not exist for
+  // the agent — SEARCH_TOOLS will not surface them, MULTI_EXECUTE_TOOL
+  // rejects calls to them. The client-side wrapper layer (pinSupabase,
+  // pinGithubRepos) then adds resource-scoping for `project_ref` and
+  // `owner/repo` args on top of the allowlist.
+  const toolsConfig = buildAllowlistConfig(instance.allowedToolSlugs);
+  const toolkitsToEnable = Object.keys(toolsConfig);
+
   const composio = createComposioClient();
   const session = await composio.create(instance.userId, {
     manageConnections: {
       waitForConnections: true,
+    },
+    ...(toolkitsToEnable.length > 0
+      ? { toolkits: { enable: toolkitsToEnable }, tools: toolsConfig }
+      : {}),
+    workbench: {
+      // Keep the Python sandbox available for formatting/analysing
+      // tool output. `enableProxyExecution: false` closes the raw-REST
+      // bypass — Python cannot proxy outbound calls through the user's
+      // connected tokens. See
+      // docs/superpowers/specs/2026-05-16-composio-session-allowlist-design.md
+      enable: true,
+      enableProxyExecution: false,
     },
   });
   const composioTools = await session.tools();
