@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Settings2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { trpc } from "~/clients/trpc";
 import {
@@ -10,6 +11,45 @@ import {
 import type { RouterOutputs } from "~/clients/trpc";
 import { SupabaseProjectPicker } from "./supabase-project-picker";
 import { GithubRepoPicker } from "./github-repo-picker";
+import { ToolsAllowlistDialog } from "./tools-allowlist-dialog";
+
+/**
+ * Bottom-of-card affordance to open the tools allowlist dialog. Shown
+ * for any connected toolkit — Supabase/GitHub already have a pin badge
+ * in the top-right corner for *resource* pinning; this is the parallel
+ * surface for *tool-slug* pinning.
+ */
+function ManageToolsButton({
+  toolkit,
+  toolkitName,
+}: {
+  toolkit: string;
+  toolkitName: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        title="Manage which tools the agent can use"
+      >
+        <Settings2 className="h-3 w-3" />
+        Manage tools
+      </button>
+      <ToolsAllowlistDialog
+        open={open}
+        onOpenChange={setOpen}
+        toolkit={toolkit}
+        toolkitName={toolkitName}
+      />
+    </>
+  );
+}
 
 type ToolkitItem = RouterOutputs["toolkits"]["getToolkits"]["items"][number];
 
@@ -211,7 +251,13 @@ export function ToolkitCard({ toolkit }: ToolkitCardProps) {
             {toolkit.name}
           </h3>
 
-
+          {/* Tool-slug allowlist affordance — only meaningful when usable */}
+          {isConnected ? (
+            <ManageToolsButton
+              toolkit={slugLower}
+              toolkitName={toolkit.name}
+            />
+          ) : null}
         </div>
       </div>
 

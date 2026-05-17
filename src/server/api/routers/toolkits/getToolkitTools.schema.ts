@@ -1,7 +1,17 @@
 import { z } from "zod";
 
+// Composio's toolkit slugs are lowercase alphanumeric (verified against the
+// live catalog at backend.composio.dev/api/v3/tools). The regex prevents
+// arbitrary strings from being used as Map keys or URL params downstream.
+const composioToolkitSlug = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+$/i, "toolkit must be lowercase alphanumeric")
+  .toLowerCase();
+
 export const getToolkitToolsInput = z.object({
-  toolkit: z.string().min(1).toLowerCase(),
+  toolkit: composioToolkitSlug,
 });
 
 export const toolkitToolItem = z.object({

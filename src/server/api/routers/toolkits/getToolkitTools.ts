@@ -41,7 +41,15 @@ async function fetchToolkitCatalog(toolkit: string): Promise<Array<z.infer<typeo
       headers: { "x-api-key": env.COMPOSIO_API_KEY ?? "" },
     });
     if (!res.ok) {
-      throw new Error(`Composio catalog HTTP ${res.status}: ${await res.text().catch(() => "")}`);
+      // Log the raw response body server-side for ops debugging, but do not
+      // include it in the thrown error — Composio's error payloads can
+      // contain rate-limit / trace / auth details that should not be
+      // forwarded to the browser.
+      const body = await res.text().catch(() => "");
+      console.error(
+        `[getToolkitTools] Composio catalog HTTP ${res.status} for toolkit=${toolkit}: ${body.slice(0, 500)}`,
+      );
+      throw new Error(`Composio catalog HTTP ${res.status}`);
     }
     const json = (await res.json()) as { items?: unknown[]; next_cursor?: string };
     for (const raw of json.items ?? []) {
@@ -104,12 +112,12 @@ export const getToolkitTools = protectedProcedure
     try {
       catalog = await fetchToolkitCatalog(input.toolkit);
     } catch (err) {
+      // Server-side log keeps the full failure context for ops; the
+      // client gets a generic message so we don't leak Composio internals.
+      console.error("[getToolkitTools] catalog fetch failed:", err);
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message:
-          err instanceof Error
-            ? `Composio catalog fetch failed: ${err.message}`
-            : "Composio catalog fetch failed",
+        message: "Tool catalog unavailable. Please try again.",
       });
     }
 
