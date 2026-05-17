@@ -554,11 +554,15 @@ export async function prepareAgentRun(
   const githubPinned = pinGithubRepos(
     supabasePinned,
     instance.pinnedGithubRepos,
-    // Destructive ops stay blocked. Phase 4 of the allowlist rewrite folds
-    // destructive control into the per-slug allowlist, so this becomes
-    // a hardcoded false here once the wrapper trim lands. See spec
+    // Allow the wrapper's destructive gate through — `allowedToolSlugs`
+    // (enforced by Composio's session config above) is now the single
+    // source of truth for what slugs the agent can call, including
+    // destructive ones. A destructive slug only reaches this wrapper
+    // if the user explicitly enabled it. The dead destructive-gate
+    // branch in pin-github-repos.ts will be removed as a follow-up
+    // (Task 14 trim). See spec
     // docs/superpowers/specs/2026-05-16-composio-session-allowlist-design.md.
-    false,
+    true,
     ({ toolSlug, attemptedRepo, reason }) => {
       // Fire-and-forget telemetry write. Never block the agent on a DB
       // hiccup — wrap any throw in a catch and log it.
