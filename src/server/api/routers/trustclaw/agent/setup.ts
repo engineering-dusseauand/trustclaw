@@ -426,36 +426,49 @@ export async function prepareAgentRun(
     throw new Error("Instance not found");
   }
 
+  // Fetch the user's currently-connected toolkits once. Used for two
+  // things below: (1) lazy-seeding `allowedToolSlugs` from defaults on
+  // first run, and (2) filtering the session config to only toolkits
+  // the user has an active connection for — without this filter,
+  // stale slugs from a prior connection (e.g. Supabase project that
+  // was later deleted) cause Composio's ToolRouter to 400 with
+  // "Invalid tool slugs in config.tools" and take down the chat.
+  let connectedToolkits = new Set<string>();
+  try {
+    const probeComposio = createComposioClient();
+    const connected = await probeComposio.connectedAccounts.list({
+      userIds: [instance.userId],
+    });
+    for (const acc of connected.items ?? []) {
+      const tk = acc.toolkit?.slug?.toLowerCase();
+      if (tk) connectedToolkits.add(tk);
+    }
+  } catch (err) {
+    // Treat probe failure as "no connections known". The session will
+    // fall through to the empty-allowlist branch below and the agent
+    // still runs with custom tools (memory, schedule).
+    console.error("[prepareAgentRun] probe connectedAccounts failed:", err);
+  }
+
   // Lazy-seed allowedToolSlugs from curated per-toolkit defaults the
-  // first time the agent runs after instance creation. Existing users
-  // upgrading from pre-allowlist TrustClaw also get seeded here. Empty
-  // → connected toolkits intersected with DEFAULT_TOOL_ALLOWLIST.
-  if (instance.allowedToolSlugs.length === 0) {
-    try {
-      const seedComposio = createComposioClient();
-      const connected = await seedComposio.connectedAccounts.list({
-        userIds: [instance.userId],
-      });
-      const seed: string[] = [];
-      for (const acc of connected.items ?? []) {
-        const toolkit = acc.toolkit?.slug?.toLowerCase();
-        if (!toolkit) continue;
-        const defaults = DEFAULT_TOOL_ALLOWLIST[toolkit];
-        if (defaults) seed.push(...defaults);
-      }
-      if (seed.length > 0) {
+  // first time the agent runs after instance creation. Empty →
+  // connected toolkits intersected with DEFAULT_TOOL_ALLOWLIST.
+  if (instance.allowedToolSlugs.length === 0 && connectedToolkits.size > 0) {
+    const seed: string[] = [];
+    for (const tk of connectedToolkits) {
+      const defaults = DEFAULT_TOOL_ALLOWLIST[tk];
+      if (defaults) seed.push(...defaults);
+    }
+    if (seed.length > 0) {
+      try {
         await db.composioClawInstance.update({
           where: { id: instance.id },
           data: { allowedToolSlugs: seed },
         });
         instance.allowedToolSlugs = seed;
+      } catch (err) {
+        console.error("[prepareAgentRun] lazy-seed write failed:", err);
       }
-    } catch (err) {
-      // Best-effort. If seeding fails the agent runs with an empty
-      // allowlist for this turn — agent gets no Composio tools but
-      // custom tools (memory, schedule) still work. User can recover
-      // by configuring tools in /dashboard/toolkits.
-      console.error("[prepareAgentRun] lazy-seed allowedToolSlugs failed:", err);
     }
   }
 
@@ -521,7 +534,22 @@ export async function prepareAgentRun(
   // rejects calls to them. The client-side wrapper layer (pinSupabase,
   // pinGithubRepos) then adds resource-scoping for `project_ref` and
   // `owner/repo` args on top of the allowlist.
-  const toolsConfig = buildAllowlistConfig(instance.allowedToolSlugs);
+  //
+  // Intersect with `connectedToolkits` so stale slugs from a prior
+  // (now-disconnected) toolkit don't trip Composio's ToolRouter
+  // validation. The user's saved preferences for the dropped toolkit
+  // remain in `allowedToolSlugs` and reactivate automatically the
+  // moment they reconnect — no UI re-configuration needed.
+  // Composio noAuth toolkits (e.g. "composio" itself) are always
+  // available regardless of connection state, so we let them through.
+  const COMPOSIO_NOAUTH_TOOLKITS = new Set(["composio"]);
+  const rawConfig = buildAllowlistConfig(instance.allowedToolSlugs);
+  const toolsConfig: typeof rawConfig = {};
+  for (const [toolkit, slice] of Object.entries(rawConfig)) {
+    if (connectedToolkits.has(toolkit) || COMPOSIO_NOAUTH_TOOLKITS.has(toolkit)) {
+      toolsConfig[toolkit] = slice;
+    }
+  }
   const toolkitsToEnable = Object.keys(toolsConfig);
 
   const composio = createComposioClient();
