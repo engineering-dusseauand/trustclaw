@@ -7,6 +7,10 @@ interface SystemPromptParams {
   relevantMemories?: string[];
   hasCompactionSummary?: boolean;
   userTimezone: string;
+  /** Pinned GitHub repos in `owner/repo` form. Surfaced to the agent so it
+   * can act on them by name instead of asking. NOT a security claim —
+   * the actual gate is the session allowlist + pin-wrapper layer. */
+  pinnedGithubRepos?: string[];
 }
 
 const DEFAULT_SOUL_PROMPT = `## Who You Are
@@ -191,6 +195,15 @@ export function buildSystemPrompt(params: SystemPromptParams): string {
 
   if (params.hasCompactionSummary) {
     sections.push(SESSION_CONTINUITY_NOTE);
+  }
+
+  if (params.pinnedGithubRepos && params.pinnedGithubRepos.length > 0) {
+    const repoLines = params.pinnedGithubRepos
+      .map((r) => `- ${r}`)
+      .join("\n");
+    sections.push(
+      `## Pinned GitHub Repos\n\nThe user has scoped GitHub access to these repos. You can read files, search code, list issues/PRs, and otherwise inspect them by name without asking. Tools that need \`owner/repo\` args should use one of these:\n\n${repoLines}\n\nIf the user asks about a repo not in this list, say it's outside scope and offer to work with one of the pinned repos instead. The session enforces this at the tool layer regardless, but be upfront about the boundary so the conversation stays productive.`,
+    );
   }
 
   if (params.relevantMemories && params.relevantMemories.length > 0) {

@@ -489,6 +489,7 @@ export async function prepareAgentRun(
       relevantMemories,
       hasCompactionSummary: !!instance.lastCompactionSummary,
       userTimezone,
+      pinnedGithubRepos: instance.pinnedGithubRepos,
     }),
   );
 
