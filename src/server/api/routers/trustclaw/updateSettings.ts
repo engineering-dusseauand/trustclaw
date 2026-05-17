@@ -19,15 +19,26 @@ export const updateSettings = protectedProcedure
       });
     }
 
+    // Prompts use `null` as "clear back to default behaviour", so we
+    // treat `=== undefined` as "no change" and any explicit value (even
+    // empty string or null) as a write.
+    const updateData: Record<string, unknown> = {};
+    if (input.anthropicModel) updateData.anthropicModel = input.anthropicModel;
+    if (input.soulPrompt !== undefined) updateData.soulPrompt = input.soulPrompt;
+    if (input.identityPrompt !== undefined)
+      updateData.identityPrompt = input.identityPrompt;
+    if (input.userPrompt !== undefined) updateData.userPrompt = input.userPrompt;
+
     const [updated] = await db.$transaction([
       db.composioClawInstance.update({
         where: { userId },
-        data: {
-          ...(input.anthropicModel && { anthropicModel: input.anthropicModel }),
-        },
+        data: updateData,
         select: {
           id: true,
           anthropicModel: true,
+          soulPrompt: true,
+          identityPrompt: true,
+          userPrompt: true,
           updatedAt: true,
         },
       }),

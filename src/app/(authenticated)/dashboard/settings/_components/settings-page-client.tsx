@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ErrorDisplay } from "~/components/core/error-display";
 import { ErrorBoundary } from "~/components/core/error-boundary";
 import { ModelSettings } from "./model-settings";
+import { PromptsSettings } from "./prompts-settings";
 import { TelegramSettings } from "./telegram-settings";
 import { CronJobsSettings } from "./cron-jobs-settings";
 import { MemorySettings } from "./memory-settings";
@@ -57,6 +58,14 @@ export function SettingsPageClient() {
 
       <ErrorBoundary>
         <ModelSettings currentModel={instance.anthropicModel} />
+      </ErrorBoundary>
+
+      <ErrorBoundary>
+        <PromptsSettings
+          currentSoulPrompt={instance.soulPrompt}
+          currentIdentityPrompt={instance.identityPrompt}
+          currentUserPrompt={instance.userPrompt}
+        />
       </ErrorBoundary>
 
       {data?.telegramConfigured && (
