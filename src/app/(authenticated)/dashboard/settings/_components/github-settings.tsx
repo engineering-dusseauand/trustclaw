@@ -1,7 +1,7 @@
 "use client";
 
 import moment from "moment";
-import { AlertTriangle, ShieldOff } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { trpc } from "~/clients/trpc";
 import type { RouterOutputs } from "~/clients/trpc";
 
@@ -14,12 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { Label } from "~/components/ui/label";
-import { Switch } from "~/components/ui/switch";
-import {
-  showSuccessToast,
-  showTrpcErrorToast,
-} from "~/components/core/toast-notifications";
 
 const BLOCK_REASON_LABEL: Record<string, string> = {
   not_pinned: "Not in pinned set",
@@ -31,23 +25,9 @@ const BLOCK_REASON_LABEL: Record<string, string> = {
 };
 
 export function GithubSettings() {
-  const utils = trpc.useUtils();
   const pinned = trpc.toolkits.getGithubPinnedRepos.useQuery();
   const blocks = trpc.toolkits.getRecentGithubBlocks.useQuery({ limit: 10 });
 
-  const setAllow = trpc.toolkits.setAllowDestructiveGithubActions.useMutation({
-    onSuccess: ({ allowDestructive }) => {
-      void utils.toolkits.getGithubPinnedRepos.invalidate();
-      showSuccessToast(
-        allowDestructive
-          ? "Destructive GitHub actions allowed"
-          : "Destructive GitHub actions blocked",
-      );
-    },
-    onError: showTrpcErrorToast,
-  });
-
-  const allowDestructive = pinned.data?.allowDestructive ?? false;
   const pinnedCount = pinned.data?.pinnedRepos.length ?? 0;
 
   return (
@@ -55,36 +35,11 @@ export function GithubSettings() {
       <CardHeader>
         <CardTitle>GitHub</CardTitle>
         <CardDescription>
-          Manage the agent&apos;s access to GitHub. Pinned repos are configured
-          on the Toolkits page; this card controls destructive actions and
-          shows recent blocks.
+          Pinned repos are configured on the Toolkits page. This card shows
+          recent blocked actions for visibility.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Destructive toggle */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex-1">
-            <Label htmlFor="allow-destructive" className="flex items-center gap-2 text-sm font-medium">
-              <ShieldOff className="h-4 w-4" />
-              Allow destructive GitHub actions
-            </Label>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Off by default. When on, the agent can delete repos, merge PRs,
-              transfer ownership, and dismiss reviews — but only on pinned
-              repos. Leave off unless you specifically need the agent to do
-              these operations.
-            </p>
-          </div>
-          <Switch
-            id="allow-destructive"
-            checked={allowDestructive}
-            disabled={pinned.isLoading || setAllow.isPending}
-            onCheckedChange={(checked) =>
-              void setAllow.mutateAsync({ allow: checked }).catch(() => undefined)
-            }
-          />
-        </div>
-
         {/* Recent blocks */}
         <div>
           <div className="mb-2 flex items-center gap-2">

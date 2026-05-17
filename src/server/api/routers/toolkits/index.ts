@@ -7,7 +7,6 @@ import { setSupabaseProjectRef } from "./setSupabaseProjectRef";
 import { listGithubRepos } from "./listGithubRepos";
 import { getGithubPinnedRepos } from "./getGithubPinnedRepos";
 import { setGithubPinnedRepos } from "./setGithubPinnedRepos";
-import { setAllowDestructiveGithubActions } from "./setAllowDestructiveGithubActions";
 import { getRecentGithubBlocks } from "./getRecentGithubBlocks";
 
 export const toolkitsRouter = router({
@@ -19,6 +18,5 @@ export const toolkitsRouter = router({
   listGithubRepos,
   getGithubPinnedRepos,
   setGithubPinnedRepos,
-  setAllowDestructiveGithubActions,
   getRecentGithubBlocks,
 });

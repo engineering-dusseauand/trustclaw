@@ -7,12 +7,10 @@ export const getGithubPinnedRepos = protectedProcedure.query(async ({ ctx }) => 
     where: { userId },
     select: {
       pinnedGithubRepos: true,
-      allowDestructiveGithubActions: true,
     },
   });
 
   return {
     pinnedRepos: instance?.pinnedGithubRepos ?? [],
-    allowDestructive: instance?.allowDestructiveGithubActions ?? false,
   };
 });

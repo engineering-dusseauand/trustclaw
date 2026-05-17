@@ -496,7 +496,11 @@ export async function prepareAgentRun(
   const githubPinned = pinGithubRepos(
     supabasePinned,
     instance.pinnedGithubRepos,
-    instance.allowDestructiveGithubActions,
+    // Destructive ops stay blocked. Phase 4 of the allowlist rewrite folds
+    // destructive control into the per-slug allowlist, so this becomes
+    // a hardcoded false here once the wrapper trim lands. See spec
+    // docs/superpowers/specs/2026-05-16-composio-session-allowlist-design.md.
+    false,
     ({ toolSlug, attemptedRepo, reason }) => {
       // Fire-and-forget telemetry write. Never block the agent on a DB
       // hiccup — wrap any throw in a catch and log it.

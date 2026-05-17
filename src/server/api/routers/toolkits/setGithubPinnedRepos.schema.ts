@@ -25,11 +25,3 @@ export const setGithubPinnedReposInput = z.object({
 });
 
 export type SetGithubPinnedReposInput = z.infer<typeof setGithubPinnedReposInput>;
-
-export const setAllowDestructiveGithubActionsInput = z.object({
-  allow: z.boolean(),
-});
-
-export type SetAllowDestructiveGithubActionsInput = z.infer<
-  typeof setAllowDestructiveGithubActionsInput
->;
