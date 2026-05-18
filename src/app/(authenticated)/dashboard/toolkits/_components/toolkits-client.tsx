@@ -6,6 +6,7 @@ import { trpc } from "~/clients/trpc";
 import { ErrorDisplay } from "~/components/core/error-display";
 import { ErrorBoundary } from "~/components/core/error-boundary";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { McpServersSection } from "./mcp-servers-section";
 import { ToolkitCard } from "./toolkit-card";
 import { ToolkitSearch } from "./toolkit-search";
 import { ToolkitsClientSkeleton } from "./toolkits-client.skeleton";
@@ -102,6 +103,8 @@ export function ToolkitsClient() {
       <h1 className="text-foreground text-xl font-bold md:text-2xl">
         Toolkits
       </h1>
+
+      <McpServersSection />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <Tabs

@@ -25,6 +25,7 @@ import {
 import { stripToolResultEchoes } from "./strip-tool-echoes";
 import { clearStreamingMessage } from "~/server/clients/redis";
 import { pinGithubRepos } from "./pin-github-repos";
+import { loadMcpTools } from "./mcp/load-mcp-tools";
 import {
   DEFAULT_TOOL_ALLOWLIST,
   buildAllowlistConfig,
@@ -650,6 +651,13 @@ export async function prepareAgentRun(
 
   const composioTools = await session.tools();
 
+  // Load user-configured MCP servers in parallel with a wall-clock cap.
+  // Per-server failures are isolated; slow servers are dropped from this
+  // turn only. See `mcp/load-mcp-tools.ts` for the failure semantics.
+  const { tools: mcpTools, cleanups: mcpCleanups } = await loadMcpTools({
+    instanceId: instance.id,
+  });
+
   const customTools = createCustomTools(instanceId, userTimezone);
 
   const supabasePinned = pinSupabaseProjectRef(
@@ -689,6 +697,7 @@ export async function prepareAgentRun(
 
   const allTools: ToolSet = sanitizeToolResults({
     ...githubPinned,
+    ...mcpTools,
     ...customTools,
   });
 
@@ -799,6 +808,16 @@ export async function prepareAgentRun(
             error,
           ),
         );
+        // Close MCP client connections. Awaited inside `onFinish` (not
+        // detached) so cleanup runs while the serverless runtime is
+        // still keeping the function alive.
+        for (const cleanup of mcpCleanups) {
+          try {
+            await cleanup();
+          } catch (error) {
+            console.error("[agent/onFinish] MCP cleanup failed:", error);
+          }
+        }
       }
     },
   });
