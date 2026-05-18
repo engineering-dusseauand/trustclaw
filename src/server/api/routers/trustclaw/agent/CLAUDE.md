@@ -21,7 +21,10 @@ User message (web / telegram / cron)
 │  4. Prune context (trim/clear old tools)  ◄─── context/context-pruning.ts
 │  5. Save user message to DB                     │
 │  6. Init Composio session + tools               │
-│  7. Create ToolLoopAgent with Anthropic   ◄─── Vercel AI SDK
+│  7. Load user-configured MCP servers in parallel │
+│     (prefixed mcp__<slug>__, 3.5s wall-clock cap,│
+│      failures isolated per-server)               │
+│  8. Create ToolLoopAgent with Anthropic   ◄─── Vercel AI SDK
 │     (memory_save / memory_search tools           │
 │      backed by pgvector + OpenAI embeddings)     │
 │  8. Return agent + messages to caller           │
@@ -54,13 +57,32 @@ agent/
 │   ├── run-compaction.ts       # Cut point algorithm, LLM summarization, DB persistence
 │   └── prompts.ts              # Summarization prompts, message serialization, tool failure tracking
 │
-└── tools/                      # Agent tool definitions (one tool per file + sibling .schema.ts)
-    ├── index.ts                # createCustomTools()
-    ├── memory-save.ts / .schema.ts    # Save a memory (pgvector + OpenAI embeddings)
-    ├── memory-search.ts / .schema.ts  # Cosine-similarity search over memories
-    ├── schedule.ts / .schema.ts       # Create/list/delete cron jobs
-    └── cron-utils.ts           # computeNextRunAt(), validateCronExpression()
+├── tools/                      # Agent tool definitions (one tool per file + sibling .schema.ts)
+│   ├── index.ts                # createCustomTools()
+│   ├── memory-save.ts / .schema.ts    # Save a memory (pgvector + OpenAI embeddings)
+│   ├── memory-search.ts / .schema.ts  # Cosine-similarity search over memories
+│   ├── schedule.ts / .schema.ts       # Create/list/delete cron jobs
+│   └── cron-utils.ts           # computeNextRunAt(), validateCronExpression()
+│
+└── mcp/                        # User-configurable MCP server integration
+    ├── mcp-client-factory.ts   # Single import surface for @modelcontextprotocol/sdk
+    └── load-mcp-tools.ts       # Runtime loader: parallel init, per-server timeout,
+                                  global wall-clock budget, error isolation,
+                                  mcp__<slug>__ tool name prefixing
 ```
+
+## MCP Server Integration
+
+Users add MCP servers (DeepWiki, Nia, Devin, custom) from `/dashboard/toolkits`. Each server's tool catalog is merged into the agent's tool dict alongside Composio + custom tools at chat time.
+
+**Security/stability properties:**
+- Per-server auth headers encrypted at rest via `src/server/lib/crypto.ts` (AES-256-GCM, versioned ciphertext).
+- URLs validated via `src/server/lib/url-safety.ts` (rejects private/loopback/link-local IPs + `.local`/`.internal`).
+- Tool names prefixed `mcp__<slug>__` so MCP tools never collide with Composio.
+- Opt-in per-server tool allowlist (`allowedToolNames`); server tools added later are off by default.
+- Per-server failures are isolated — one bad MCP server cannot tank chat.
+- Global 3.5s wall-clock budget guards first-token latency; slow servers drop for this turn only.
+- Client `.close()` thunks awaited inside `onFinish` (not detached) so cleanup runs while serverless function is still alive.
 
 ## 3-Layer Context Management
 
