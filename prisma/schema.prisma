@@ -106,6 +106,22 @@ model ComposioClawInstance {
   telegramLinkToken          String?   @unique
   telegramLinkTokenExpiresAt DateTime?
 
+  // Pinned Supabase project. When set, the agent tool wrapper rewrites
+  // `project_id` / `project_ref` on every SUPABASE_* Composio tool call so
+  // the agent cannot reach other projects in the user's Supabase org.
+  supabaseProjectRef String?
+
+  // Pinned GitHub repos. When non-empty, the agent tool wrapper restricts
+  // every GITHUB_* tool call to one of these owner/repo combinations and
+  // blocks all org-level and cross-repo enumeration. Stored lowercased.
+  // Capped at 20 entries at the tRPC layer.
+  pinnedGithubRepos String[] @default([])
+
+  /// Effective list of Composio tool slugs the agent is allowed to call,
+  /// per-instance. Seeded with curated per-toolkit defaults on first agent
+  /// run; mutated by the admin UI. Compared case-insensitively.
+  allowedToolSlugs String[] @default([])
+
   // Agent identity, stored as text
   soulPrompt      String?
   identityPrompt  String?
@@ -123,12 +139,110 @@ model ComposioClawInstance {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  messages Message[]
-  memories Memory[]
-  cronJobs CronJob[]
+  messages      Message[]
+  memories      Memory[]
+  cronJobs      CronJob[]
+  githubBlocks  GithubBlockedAction[]
+  mcpServers    ComposioClawMcpServer[]
 
   @@index([userId])
   @@map("composio_claw_instance")
+}
+
+/// User-configured MCP server. Lets users plug arbitrary remote MCP
+/// servers (DeepWiki, Nia, Devin, custom) into their TrustClaw agent.
+/// Tools from the server are merged into the agent's tool dict at chat
+/// time, prefixed with `mcp__<slug>__` to avoid collision with Composio
+/// or custom tools.
+model ComposioClawMcpServer {
+  id         String @id @default(cuid())
+  instanceId String
+
+  /// Stable identifier used in tool-name prefix (`mcp__<slug>__<tool>`).
+  /// Immutable post-create; `name` is the mutable user-facing label.
+  /// Format: `<slugified-name>_<4-char-nanoid>` (lowercase, alphanumeric+underscore).
+  slug String
+
+  /// User-facing display name. Free text, editable.
+  name String
+
+  /// MCP endpoint URL. Validated against SSRF private-range deny-list
+  /// at insert/update time. Immutable post-create to prevent attackers
+  /// from repointing a saved slug at a malicious host.
+  url String
+
+  /// Transport type. Either "http" (StreamableHTTPClientTransport) or
+  /// "sse" (SSEClientTransport).
+  transport String @default("http")
+
+  /// Encrypted bearer token / auth header value.
+  /// Format: `v1:${iv}:${ciphertext}:${authTag}` (all base64). The `v1:`
+  /// prefix makes future key-rotation a non-breaking online migration.
+  /// Null when the MCP server requires no auth.
+  authHeaderEncrypted String?
+
+  /// Tools the agent is allowed to call from this server.
+  /// Opt-in. Auto-seeded with every tool discovered on first successful
+  /// test-connection. User can disable via the per-server tools dialog.
+  /// Tools added server-side after onboarding are off by default.
+  allowedToolNames String[] @default([])
+
+  /// Whether the agent loads this server's tools at chat time. Distinct
+  /// from `allowedToolNames` being empty — `enabled: false` skips the
+  /// network call entirely.
+  enabled Boolean @default(true)
+
+  /// Recorded on most-recent connect attempt (success or failure).
+  /// `lastConnectionError` only written when the error message changes,
+  /// to debounce against outage write storms.
+  lastConnectedAt     DateTime?
+  lastConnectionError String?
+
+  /// MCP protocol version the server reported on the last successful
+  /// connect (e.g. "2025-06-18"). Useful for debugging compatibility.
+  protocolVersion String?
+
+  /// Catch-all for cached server metadata: discovered tool catalog,
+  /// server-reported capabilities, etc. Keep schema-light here; promote
+  /// columns when usage hardens.
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  instance ComposioClawInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, slug])
+  @@index([instanceId, enabled])
+  @@map("composio_claw_mcp_server")
+}
+
+/// Records each time the agent attempted a blocked GitHub tool call. Used
+/// for surfacing UX hints ("the agent tried foo/bar — want to pin it?")
+/// and for auditing what the agent has been asked to do. Pruned by app
+/// logic, not by FK cascade.
+enum GithubBlockReason {
+  not_pinned
+  destructive_blocked
+  org_level_blocked
+  search_blocked
+  url_arg_refused
+  no_pins_configured
+  auth_user_enumeration_blocked
+}
+
+model GithubBlockedAction {
+  id            String            @id @default(cuid())
+  instanceId    String
+  toolSlug      String
+  attemptedRepo String?
+  reason        GithubBlockReason
+  createdAt     DateTime          @default(now())
+
+  instance ComposioClawInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, createdAt])
+  @@map("composio_claw_github_block")
 }
 
 model Message {

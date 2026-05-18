@@ -1,6 +1,6 @@
 import { smoothStream, UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { z } from "zod";
-import { auth } from "~/server/auth";
+import { createClient } from "~/lib/supabase/server";
 import { db } from "~/server/clients/db";
 import { prepareAgentRun } from "~/server/api/routers/trustclaw/agent/setup";
 import {
@@ -8,7 +8,6 @@ import {
   getStreamingMessage,
 } from "~/server/clients/redis";
 import { getStreamContext } from "./stream-store";
-import { TRPCError } from "@trpc/server";
 
 const chatRequestBody = z.object({
   messages: z.array(
@@ -20,29 +19,35 @@ const chatRequestBody = z.object({
   ),
 });
 
-async function getAuthenticatedInstance(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
-  }
+/**
+ * Resolves the current user from Supabase Auth cookies and returns their
+ * ComposioClawInstance, or null if either lookup fails. Mirrors the auth
+ * shape used by the tRPC context in src/server/api/trpc.ts so this route
+ * stays consistent with the rest of the app after the Better Auth →
+ * Supabase Auth migration.
+ */
+async function getAuthenticatedInstance(): Promise<
+  { userId: string; instanceId: string } | null
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
 
-  const userId = session.user.id;
   const instance = await db.composioClawInstance.findUnique({
-    where: { userId },
-    select: { id: true, userId: true },
+    where: { userId: user.id },
+    select: { id: true },
   });
+  if (!instance) return null;
 
-  if (!instance) {
-    throw new TRPCError({ code: "NOT_FOUND" });
-  }
-
-  return { userId, instanceId: instance.id };
+  return { userId: user.id, instanceId: instance.id };
 }
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const authResult = await getAuthenticatedInstance(request);
+  const authResult = await getAuthenticatedInstance();
   if (!authResult) {
     return new Response("Unauthorized", { status: 401 });
   }
@@ -112,7 +117,10 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const authResult = await getAuthenticatedInstance(request);
+  const authResult = await getAuthenticatedInstance();
+  if (!authResult) {
+    return new Response("Unauthorized", { status: 401 });
+  }
 
   const { instanceId } = authResult;
   const url = new URL(request.url);

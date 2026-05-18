@@ -4,6 +4,7 @@ import { getStatus } from "./getStatus";
 import { createInstance } from "./createInstance";
 import { updateSettings } from "./updateSettings";
 import { deleteInstance } from "./deleteInstance";
+import { clearConversation } from "./clearConversation";
 import { linkTelegram } from "./linkTelegram";
 import { unlinkTelegram } from "./unlinkTelegram";
 import { getCronJobs } from "./getCronJobs";
@@ -22,6 +23,7 @@ export const trustclawRouter = router({
   createInstance,
   updateSettings,
   deleteInstance,
+  clearConversation,
   linkTelegram,
   unlinkTelegram,
   getCronJobs,
